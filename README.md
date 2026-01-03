@@ -1,0 +1,1 @@
+# scheletro-manager
