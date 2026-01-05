@@ -97,6 +97,7 @@ SHEET_VENTAS_CAB = "Ventas_Cabecera"
 SHEET_VENTAS_DET = "Ventas_Detalle"
 SHEET_CONFIG = "Config"
 SHEET_INVERSIONES = "Inversiones"
+SHEET_EGRESOS = "Egresos"
 
 
 # -----------------------------
@@ -152,6 +153,16 @@ INVEST_REQUIRED = [
     "Referencia",
     "Monto_Invertido",
     "Notas",
+]
+
+EGRESOS_REQUIRED = [
+    "Egreso_ID",
+    "Fecha",
+    "Concepto",
+    "Categoria",
+    "Monto",
+    "Notas",
+    "Drop",
 ]
 
 
@@ -652,6 +663,41 @@ def init_state() -> None:
     st.session_state.setdefault("pce_otro", 2.99)
 
     st.session_state.setdefault("_reset_sale_pending", False)
+def next_egreso_id(eg_df: pd.DataFrame, year: int) -> str:
+    pat = re.compile(r"^E-(\d{4})-(\d{4})$")
+    max_n = 0
+    if "Egreso_ID" not in eg_df.columns:
+        return f"E-{year}-0001"
+
+    for eid in eg_df["Egreso_ID"].astype(str).tolist():
+        m = pat.match(eid.strip())
+        if not m:
+            continue
+        y = int(m.group(1))
+        n = int(m.group(2))
+        if y == year and n > max_n:
+            max_n = n
+
+    return f"E-{year}-{max_n+1:04d}"
+
+
+
+def load_egresos(conn: GSheetsConnection, ttl_s: int = 180) -> pd.DataFrame:
+    df = load_raw_sheet(conn, SHEET_EGRESOS, ttl_s=ttl_s)
+    if df.empty:
+        return _align_required_columns(pd.DataFrame(), EGRESOS_REQUIRED)
+
+    df = _align_required_columns(df, EGRESOS_REQUIRED)
+    # Normalizaciones
+    if "Fecha" in df.columns:
+        df["Fecha"] = df["Fecha"].astype(str).str.strip()
+    if "Monto" in df.columns:
+        df["Monto"] = df["Monto"].apply(_to_numeric)
+    for c in ["Concepto", "Categoria", "Notas", "Drop", "Egreso_ID"]:
+        if c in df.columns:
+            df[c] = df[c].astype(str).replace({"nan": ""}).fillna("").str.strip()
+    return df
+
 
 
 def reset_sale_form() -> None:
@@ -726,6 +772,8 @@ def fmt_bodega(x: str) -> str:
 
 # Inventario (cache medio)
 inv_df_full = load_inventario(conn, ttl_s=45)
+# Egresos (cache medio)
+egresos_df_full = load_egresos(conn, ttl_s=45)
 
 # Tabs
 tab_ventas, tab_inventario, tab_finanzas = st.tabs(["🧾 Ventas", "📦 Inventario", "📈 Finanzas"])
@@ -953,450 +1001,560 @@ with tab_inventario:
         # -----------------------------
     # Sección 3: Ingreso de producto (nuevo)
     # -----------------------------
-    with st.expander("Ingreso de producto", expanded=False):
-        st.caption(
-            "Crea un producto nuevo y lo registra en tu hoja de Inventario. "
-            "Importante: **NO** se escribe nada en Google Sheets hasta que presionés **Guardar producto**."
+    
+    # -----------------------------
+    # EGRESOS (nuevo)
+    # -----------------------------
+    with st.expander("💸 Egresos", expanded=False):
+        eg_df = egresos_df_full.copy()
+
+        # Filtros rápidos
+        f1, f2, f3 = st.columns([1, 1, 1])
+        with f1:
+            eg_only_drop = st.selectbox("Drop (filtrar)", ["(Todos)"] + sorted([d for d in eg_df.get("Drop", pd.Series()).astype(str).replace({"nan": ""}).tolist() if d.strip()]) if not eg_df.empty else ["(Todos)"], key="eg_drop_filter")
+        with f2:
+            eg_cat_vals = []
+            if not eg_df.empty and "Categoria" in eg_df.columns:
+                eg_cat_vals = sorted({c for c in eg_df["Categoria"].astype(str).replace({"nan": ""}).tolist() if c.strip()})
+            eg_only_cat = st.selectbox("Categoría (filtrar)", ["(Todas)"] + eg_cat_vals, key="eg_cat_filter")
+        with f3:
+            eg_top_n = st.number_input("Mostrar últimos", min_value=5, max_value=200, value=25, step=5, key="eg_top_n")
+
+        # Aplicar filtros
+        eg_show = eg_df.copy()
+        if not eg_show.empty:
+            if eg_only_drop != "(Todos)" and "Drop" in eg_show.columns:
+                eg_show = eg_show[eg_show["Drop"].astype(str).str.strip() == eg_only_drop].copy()
+            if eg_only_cat != "(Todas)" and "Categoria" in eg_show.columns:
+                eg_show = eg_show[eg_show["Categoria"].astype(str).str.strip() == eg_only_cat].copy()
+
+            # Orden por Fecha (string) y Egreso_ID como fallback
+            if "Fecha" in eg_show.columns:
+                eg_show["_FechaSort"] = pd.to_datetime(eg_show["Fecha"], errors="coerce")
+                eg_show = eg_show.sort_values(by=["_FechaSort"], ascending=False)
+                eg_show = eg_show.drop(columns=["_FechaSort"], errors="ignore")
+
+            eg_show = eg_show.head(int(eg_top_n))
+
+        # Resumen
+        total_monto = float(eg_show["Monto"].sum()) if (not eg_show.empty and "Monto" in eg_show.columns) else 0.0
+        st.caption(f"Total (vista actual): {money(total_monto)}")
+
+        st.dataframe(
+            eg_show[["Egreso_ID", "Fecha", "Concepto", "Categoria", "Monto", "Drop", "Notas"]]
+            if (not eg_show.empty and set(["Egreso_ID","Fecha","Concepto","Categoria","Monto","Drop","Notas"]).issubset(set(eg_show.columns)))
+            else eg_show,
+            use_container_width=True,
+            hide_index=True,
         )
 
-        # -------------------------------------------------
-        # Estado interno (para que NO se borre lo escrito)
-        # -------------------------------------------------
-        def _np_init_state() -> None:
-            ss = st.session_state
-            ss.setdefault("np_stage", "define")  # define | stock
-            ss.setdefault("np_tiene_tallas", True)
-            ss.setdefault("np_tiene_colores", True)
+        st.divider()
 
-            ss.setdefault("np_nombre", "")
-            ss.setdefault("np_drop_sel", "")
-            ss.setdefault("np_add_drop", False)
-            ss.setdefault("np_new_drop", "")
-            ss.setdefault("np_new_drop_code", "")
-
-            ss.setdefault("np_costo", 0.0)
-            ss.setdefault("np_precio", 0.0)
-            ss.setdefault("np_almacen", "Casa")  # interno: Casa/Bodega
-
-            ss.setdefault("np_prod_code", "")
-            ss.setdefault("np_allow_stock0", False)
-
-            ss.setdefault("np_colores_sel", ["Standard"])
-            ss.setdefault("np_tallas_sel", ["S", "M", "L", "XL"])
-
-            ss.setdefault("np_variants", {"colores": ["Standard"], "tallas": ["OS"]})
-
-        def _np_clear_stock_keys() -> None:
-            # Elimina inputs dinámicos de stock para que no queden residuos entre combinaciones.
-            kill = [k for k in st.session_state.keys() if str(k).startswith("np_stock_")]
-            for k in kill:
+        # Formulario: registrar egreso
+        with st.form("form_egreso", clear_on_submit=True):
+            c1, c2, c3 = st.columns([1, 1, 1])
+            with c1:
+                eg_fecha = st.date_input("Fecha", value=datetime.now().date())
+            with c2:
+                eg_concepto = st.text_input("Concepto", placeholder="Ej: Pago proveedor, Ads IG, Empaque...")
+            with c3:
+                # Drop: desde catálogo si existe
+                drop_opts = ["(Sin drop)"]
                 try:
-                    del st.session_state[k]
+                    drop_opts += sorted([d for d in drop_vals if str(d).strip()])
                 except Exception:
                     pass
+                eg_drop = st.selectbox("Drop", drop_opts)
 
-        def _np_unlock_variants() -> None:
-            # Volver a editar (NO toca nombre/costo/precio/drop/almacen)
-            st.session_state["np_stage"] = "define"
-            _np_clear_stock_keys()
+            c4, c5 = st.columns([1, 1])
+            with c4:
+                eg_categoria = st.text_input("Categoría", placeholder="Ej: Producción / Marketing / Envíos / Impuestos...")
+            with c5:
+                eg_monto = st.number_input("Monto", min_value=0.0, value=0.0, step=1.0)
 
-        def _np_lock_variants() -> None:
-            # Congela la selección de tallas/colores y abre la sección de stock (sin borrar lo escrito)
+            eg_notas = st.text_area("Notas (opcional)", placeholder="Detalles, factura, método de pago, etc.")
+
+            ok = st.form_submit_button("Guardar egreso", use_container_width=True)
+
+        if ok:
+            try:
+                # Releer sin cache para evitar duplicados si hubo cambios recientes
+                eg_all = load_egresos(conn, ttl_s=0)
+
+                year = int(pd.Timestamp.now(tz=LOCAL_TZ).year)
+                eid = next_egreso_id(eg_all, year)
+
+                new_row = {
+                    "Egreso_ID": eid,
+                    "Fecha": str(eg_fecha),
+                    "Concepto": str(eg_concepto or "").strip(),
+                    "Categoria": str(eg_categoria or "").strip(),
+                    "Monto": float(eg_monto or 0.0),
+                    "Notas": str(eg_notas or "").strip(),
+                    "Drop": "" if eg_drop == "(Sin drop)" else str(eg_drop).strip(),
+                }
+
+                # Validaciones mínimas
+                if not new_row["Concepto"]:
+                    st.error("Poné un Concepto para el egreso.")
+                elif new_row["Monto"] <= 0:
+                    st.error("El Monto debe ser mayor que 0.")
+                else:
+                    eg_all = _align_required_columns(eg_all, EGRESOS_REQUIRED)
+                    eg_all = pd.concat([eg_all, pd.DataFrame([new_row])], ignore_index=True)
+
+                    save_sheet(conn, SHEET_EGRESOS, eg_all)
+                    st.success(f"Egreso registrado: {eid}")
+                    st.rerun()
+
+            except Exception as e:
+                st.error("Error al guardar el egreso.")
+                st.exception(e)
+
+    with st.expander("Ingreso de producto", expanded=False):
+            st.caption(
+                "Crea un producto nuevo y lo registra en tu hoja de Inventario. "
+                "Importante: **NO** se escribe nada en Google Sheets hasta que presionés **Guardar producto**."
+            )
+
+            # -------------------------------------------------
+            # Estado interno (para que NO se borre lo escrito)
+            # -------------------------------------------------
+            def _np_init_state() -> None:
+                ss = st.session_state
+                ss.setdefault("np_stage", "define")  # define | stock
+                ss.setdefault("np_tiene_tallas", True)
+                ss.setdefault("np_tiene_colores", True)
+
+                ss.setdefault("np_nombre", "")
+                ss.setdefault("np_drop_sel", "")
+                ss.setdefault("np_add_drop", False)
+                ss.setdefault("np_new_drop", "")
+                ss.setdefault("np_new_drop_code", "")
+
+                ss.setdefault("np_costo", 0.0)
+                ss.setdefault("np_precio", 0.0)
+                ss.setdefault("np_almacen", "Casa")  # interno: Casa/Bodega
+
+                ss.setdefault("np_prod_code", "")
+                ss.setdefault("np_allow_stock0", False)
+
+                ss.setdefault("np_colores_sel", ["Standard"])
+                ss.setdefault("np_tallas_sel", ["S", "M", "L", "XL"])
+
+                ss.setdefault("np_variants", {"colores": ["Standard"], "tallas": ["OS"]})
+
+            def _np_clear_stock_keys() -> None:
+                # Elimina inputs dinámicos de stock para que no queden residuos entre combinaciones.
+                kill = [k for k in st.session_state.keys() if str(k).startswith("np_stock_")]
+                for k in kill:
+                    try:
+                        del st.session_state[k]
+                    except Exception:
+                        pass
+
+            def _np_unlock_variants() -> None:
+                # Volver a editar (NO toca nombre/costo/precio/drop/almacen)
+                st.session_state["np_stage"] = "define"
+                _np_clear_stock_keys()
+
+            def _np_lock_variants() -> None:
+                # Congela la selección de tallas/colores y abre la sección de stock (sin borrar lo escrito)
+                tiene_tallas = bool(st.session_state.get("np_tiene_tallas", True))
+                tiene_colores = bool(st.session_state.get("np_tiene_colores", True))
+
+                tallas = st.session_state.get("np_tallas_sel", []) or []
+                colores = st.session_state.get("np_colores_sel", []) or []
+
+                if not tiene_tallas:
+                    tallas = ["OS"]
+                else:
+                    tallas = [str(s).strip().upper() for s in tallas if str(s).strip()]
+                    if not tallas:
+                        tallas = ["S"]
+
+                if not tiene_colores:
+                    colores = ["Standard"]
+                else:
+                    colores = [str(c).strip() for c in colores if str(c).strip()]
+                    if not colores:
+                        colores = ["Standard"]
+
+                st.session_state["np_variants"] = {"colores": colores, "tallas": tallas}
+                st.session_state["np_stage"] = "stock"
+                _np_clear_stock_keys()
+
+            def _np_reset_all() -> None:
+                # Limpia TODO el flujo de ingreso
+                keys = [
+                    "np_stage",
+                    "np_tiene_tallas",
+                    "np_tiene_colores",
+                    "np_nombre",
+                    "np_drop_sel",
+                    "np_add_drop",
+                    "np_new_drop",
+                    "np_new_drop_code",
+                    "np_costo",
+                    "np_precio",
+                    "np_almacen",
+                    "np_prod_code",
+                    "np_allow_stock0",
+                    "np_colores_sel",
+                    "np_tallas_sel",
+                    "np_variants",
+                ]
+                for k in keys:
+                    if k in st.session_state:
+                        del st.session_state[k]
+                _np_clear_stock_keys()
+                _np_init_state()
+
+            _np_init_state()
+
+            stage = str(st.session_state.get("np_stage", "define"))
+            locked = stage == "stock"
+
+            # -------------------------------------------------
+            # Catálogos (cacheado con TTL en conn.read)
+            # -------------------------------------------------
+            cat_df = load_catalogos(conn, ttl_s=600)
+            cat = parse_catalogos(cat_df)
+            drops = cat.get("drops", [])
+            colores_cat = cat.get("colores", [])
+
+            drop_vals = [d.get("valor", "") for d in drops if str(d.get("valor", "")).strip()] or []
+            color_vals = [c.get("valor", "") for c in colores_cat if str(c.get("valor", "")).strip()] or []
+
+            # Mapas de códigos (para SKU)
+            color_to_code = {c.get("valor", ""): c.get("codigo", "") for c in colores_cat}
+            color_to_code.setdefault("Standard", "STD")
+            color_to_code.setdefault("STANDARD", "STD")
+
+            # Si no hay drops en catálogo, igual dejamos un fallback
+            if not drop_vals:
+                drop_vals = ["(sin drops en Catalogos)"]
+
+            # Asegura que el selectbox no quede en un valor inválido
+            if st.session_state.get("np_drop_sel") not in drop_vals:
+                st.session_state["np_drop_sel"] = drop_vals[0]
+
+            # Autollenado del código producto (solo si está vacío)
+            if not str(st.session_state.get("np_prod_code", "")).strip() and str(st.session_state.get("np_nombre", "")).strip():
+                st.session_state["np_prod_code"] = suggest_product_code(str(st.session_state.get("np_nombre", "")))
+
+            # -------------------------------------------------
+            # UI: switches de variantes (estos son los únicos que "cambian" la vista)
+            # -------------------------------------------------
+            sw1, sw2 = st.columns(2)
+            with sw1:
+                st.toggle(
+                    "Tiene tallas",
+                    key="np_tiene_tallas",
+                    disabled=locked,
+                    on_change=_np_unlock_variants,
+                )
+            with sw2:
+                st.toggle(
+                    "Tiene variante de color",
+                    key="np_tiene_colores",
+                    disabled=locked,
+                    on_change=_np_unlock_variants,
+                )
+
+            # -------------------------------------------------
+            # UI: datos base (SIEMPRE visibles, solo se deshabilitan cuando las variantes están aplicadas)
+            # -------------------------------------------------
+            with st.container():
+                st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+
+                st.text_input("Nombre del producto", key="np_nombre", disabled=locked, on_change=_np_unlock_variants)
+
+                # Drop (solo lectura visual; no hace writes hasta Guardar)
+                st.selectbox("Drop", options=drop_vals, key="np_drop_sel", disabled=locked, on_change=_np_unlock_variants)
+
+                with st.expander("Agregar drop nuevo (opcional)", expanded=False):
+                    st.checkbox("Agregar drop nuevo", key="np_add_drop", disabled=locked)
+                    if st.session_state.get("np_add_drop", False):
+                        st.text_input("Nuevo drop (ej: D005)", key="np_new_drop", disabled=locked)
+                        st.text_input("Código drop (si no, igual al valor)", key="np_new_drop_code", disabled=locked)
+
+                c1, c2 = st.columns(2)
+                with c1:
+                    st.number_input(
+                        "Costo del producto ($)",
+                        min_value=0.0,
+                        step=0.50,
+                        format="%.2f",
+                        key="np_costo",
+                        disabled=locked,
+                        on_change=_np_unlock_variants,
+                    )
+                with c2:
+                    st.number_input(
+                        "Precio de venta ($)",
+                        min_value=0.0,
+                        step=0.50,
+                        format="%.2f",
+                        key="np_precio",
+                        disabled=locked,
+                        on_change=_np_unlock_variants,
+                    )
+
+                st.radio(
+                    "Almacén inicial",
+                    options=["Casa", "Bodega"],
+                    horizontal=True,
+                    key="np_almacen",
+                    format_func=fmt_bodega,
+                    disabled=locked,
+                    on_change=_np_unlock_variants,
+                )
+
+                # Código producto (3 letras)
+                st.text_input(
+                    "Código producto (3 letras) (auto sugerido)",
+                    key="np_prod_code",
+                    disabled=locked,
+                    help="Se usa como 2do segmento del SKU: DROP-PROD-COLOR-TALLA",
+                    on_change=_np_unlock_variants,
+                )
+
+                st.toggle("Permitir guardar con stock 0", key="np_allow_stock0", disabled=locked)
+
+
+            # -------------------------------------------------
+            # UI: selección de variantes (solo si NO está bloqueado)
+            # -------------------------------------------------
             tiene_tallas = bool(st.session_state.get("np_tiene_tallas", True))
             tiene_colores = bool(st.session_state.get("np_tiene_colores", True))
 
-            tallas = st.session_state.get("np_tallas_sel", []) or []
-            colores = st.session_state.get("np_colores_sel", []) or []
-
-            if not tiene_tallas:
-                tallas = ["OS"]
-            else:
-                tallas = [str(s).strip().upper() for s in tallas if str(s).strip()]
-                if not tallas:
-                    tallas = ["S"]
-
-            if not tiene_colores:
-                colores = ["Standard"]
-            else:
-                colores = [str(c).strip() for c in colores if str(c).strip()]
-                if not colores:
-                    colores = ["Standard"]
-
-            st.session_state["np_variants"] = {"colores": colores, "tallas": tallas}
-            st.session_state["np_stage"] = "stock"
-            _np_clear_stock_keys()
-
-        def _np_reset_all() -> None:
-            # Limpia TODO el flujo de ingreso
-            keys = [
-                "np_stage",
-                "np_tiene_tallas",
-                "np_tiene_colores",
-                "np_nombre",
-                "np_drop_sel",
-                "np_add_drop",
-                "np_new_drop",
-                "np_new_drop_code",
-                "np_costo",
-                "np_precio",
-                "np_almacen",
-                "np_prod_code",
-                "np_allow_stock0",
-                "np_colores_sel",
-                "np_tallas_sel",
-                "np_variants",
-            ]
-            for k in keys:
-                if k in st.session_state:
-                    del st.session_state[k]
-            _np_clear_stock_keys()
-            _np_init_state()
-
-        _np_init_state()
-
-        stage = str(st.session_state.get("np_stage", "define"))
-        locked = stage == "stock"
-
-        # -------------------------------------------------
-        # Catálogos (cacheado con TTL en conn.read)
-        # -------------------------------------------------
-        cat_df = load_catalogos(conn, ttl_s=600)
-        cat = parse_catalogos(cat_df)
-        drops = cat.get("drops", [])
-        colores_cat = cat.get("colores", [])
-
-        drop_vals = [d.get("valor", "") for d in drops if str(d.get("valor", "")).strip()] or []
-        color_vals = [c.get("valor", "") for c in colores_cat if str(c.get("valor", "")).strip()] or []
-
-        # Mapas de códigos (para SKU)
-        color_to_code = {c.get("valor", ""): c.get("codigo", "") for c in colores_cat}
-        color_to_code.setdefault("Standard", "STD")
-        color_to_code.setdefault("STANDARD", "STD")
-
-        # Si no hay drops en catálogo, igual dejamos un fallback
-        if not drop_vals:
-            drop_vals = ["(sin drops en Catalogos)"]
-
-        # Asegura que el selectbox no quede en un valor inválido
-        if st.session_state.get("np_drop_sel") not in drop_vals:
-            st.session_state["np_drop_sel"] = drop_vals[0]
-
-        # Autollenado del código producto (solo si está vacío)
-        if not str(st.session_state.get("np_prod_code", "")).strip() and str(st.session_state.get("np_nombre", "")).strip():
-            st.session_state["np_prod_code"] = suggest_product_code(str(st.session_state.get("np_nombre", "")))
-
-        # -------------------------------------------------
-        # UI: switches de variantes (estos son los únicos que "cambian" la vista)
-        # -------------------------------------------------
-        sw1, sw2 = st.columns(2)
-        with sw1:
-            st.toggle(
-                "Tiene tallas",
-                key="np_tiene_tallas",
-                disabled=locked,
-                on_change=_np_unlock_variants,
-            )
-        with sw2:
-            st.toggle(
-                "Tiene variante de color",
-                key="np_tiene_colores",
-                disabled=locked,
-                on_change=_np_unlock_variants,
-            )
-
-        # -------------------------------------------------
-        # UI: datos base (SIEMPRE visibles, solo se deshabilitan cuando las variantes están aplicadas)
-        # -------------------------------------------------
-        with st.container():
-            st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-
-            st.text_input("Nombre del producto", key="np_nombre", disabled=locked, on_change=_np_unlock_variants)
-
-            # Drop (solo lectura visual; no hace writes hasta Guardar)
-            st.selectbox("Drop", options=drop_vals, key="np_drop_sel", disabled=locked, on_change=_np_unlock_variants)
-
-            with st.expander("Agregar drop nuevo (opcional)", expanded=False):
-                st.checkbox("Agregar drop nuevo", key="np_add_drop", disabled=locked)
-                if st.session_state.get("np_add_drop", False):
-                    st.text_input("Nuevo drop (ej: D005)", key="np_new_drop", disabled=locked)
-                    st.text_input("Código drop (si no, igual al valor)", key="np_new_drop_code", disabled=locked)
-
-            c1, c2 = st.columns(2)
-            with c1:
-                st.number_input(
-                    "Costo del producto ($)",
-                    min_value=0.0,
-                    step=0.50,
-                    format="%.2f",
-                    key="np_costo",
-                    disabled=locked,
-                    on_change=_np_unlock_variants,
-                )
-            with c2:
-                st.number_input(
-                    "Precio de venta ($)",
-                    min_value=0.0,
-                    step=0.50,
-                    format="%.2f",
-                    key="np_precio",
-                    disabled=locked,
-                    on_change=_np_unlock_variants,
-                )
-
-            st.radio(
-                "Almacén inicial",
-                options=["Casa", "Bodega"],
-                horizontal=True,
-                key="np_almacen",
-                format_func=fmt_bodega,
-                disabled=locked,
-                on_change=_np_unlock_variants,
-            )
-
-            # Código producto (3 letras)
-            st.text_input(
-                "Código producto (3 letras) (auto sugerido)",
-                key="np_prod_code",
-                disabled=locked,
-                help="Se usa como 2do segmento del SKU: DROP-PROD-COLOR-TALLA",
-                on_change=_np_unlock_variants,
-            )
-
-            st.toggle("Permitir guardar con stock 0", key="np_allow_stock0", disabled=locked)
-
-
-        # -------------------------------------------------
-        # UI: selección de variantes (solo si NO está bloqueado)
-        # -------------------------------------------------
-        tiene_tallas = bool(st.session_state.get("np_tiene_tallas", True))
-        tiene_colores = bool(st.session_state.get("np_tiene_colores", True))
-
-        if not locked:
-            if tiene_tallas:
-                all_sizes = ["XS", "S", "M", "L", "XL", "XXL", "XXXL", "OS"]
-                default_sizes = ["S", "M", "L", "XL"]
-                # ⚠️ Streamlit: este widget ya está controlado por `key=`.
-                # Si también pasamos `default=`, Streamlit muestra el warning:
-                # "created with a default value but also had its value set via Session State".
-                # Por eso, dejamos que el valor venga SOLO de `st.session_state`.
-                st.multiselect(
-                    "Tallas",
-                    options=all_sizes,
-                    key="np_tallas_sel",
-                )
-            else:
-                st.session_state["np_tallas_sel"] = ["OS"]
-
-            if tiene_colores:
-                if not color_vals:
-                    st.info("No hay colores en Catalogos. Se usará 'Standard'.")
-                    st.session_state["np_colores_sel"] = ["Standard"]
-                else:
+            if not locked:
+                if tiene_tallas:
+                    all_sizes = ["XS", "S", "M", "L", "XL", "XXL", "XXXL", "OS"]
+                    default_sizes = ["S", "M", "L", "XL"]
+                    # ⚠️ Streamlit: este widget ya está controlado por `key=`.
+                    # Si también pasamos `default=`, Streamlit muestra el warning:
+                    # "created with a default value but also had its value set via Session State".
+                    # Por eso, dejamos que el valor venga SOLO de `st.session_state`.
                     st.multiselect(
-                        "Colores",
-                        options=color_vals,
-                        key="np_colores_sel",
+                        "Tallas",
+                        options=all_sizes,
+                        key="np_tallas_sel",
                     )
-            else:
-                st.session_state["np_colores_sel"] = ["Standard"]
+                else:
+                    st.session_state["np_tallas_sel"] = ["OS"]
 
-            # Botones de acción (sin escribir nada)
-            b1, b2 = st.columns(2)
-            with b1:
-                if st.button("✅ Aplicar variantes", use_container_width=True):
-                    _np_lock_variants()
-                    st.rerun()
-            with b2:
-                if st.button("🧹 Limpiar formulario", use_container_width=True):
-                    _np_reset_all()
-                    st.rerun()
-
-        # -------------------------------------------------
-        # UI: stock por variante (cuando ya aplicaste variantes)
-        # -------------------------------------------------
-        if locked:
-            v = st.session_state.get("np_variants", {}) or {}
-            v_colors = [str(x) for x in (v.get("colores") or ["Standard"]) if str(x).strip()]
-            v_sizes = [str(x).upper() for x in (v.get("tallas") or ["OS"]) if str(x).strip()]
-
-            st.markdown(
-                f"**Variantes aplicadas:** {len(v_colors)} color(es) × {len(v_sizes)} talla(s) = **{len(v_colors)*len(v_sizes)} SKU(s)**"
-            )
-
-            top_l, top_r = st.columns([1, 1])
-            with top_l:
-                if st.button("↩️ Editar variantes", use_container_width=True):
-                    _np_unlock_variants()
-                    st.rerun()
-            with top_r:
-                if st.button("🧹 Limpiar formulario", use_container_width=True):
-                    _np_reset_all()
-                    st.rerun()
-
-            st.markdown("## Stock inicial (unidades)")
-
-            # Inputs dinámicos por color x talla (sin forms para que no se pierda nada)
-            total_units = 0
-            stock_map: dict[tuple[str, str], int] = {}
-
-            def _stk_key(color: str, talla: str) -> str:
-                # key estable y segura
-                c = re.sub(r"[^A-Za-z0-9]", "", str(color)).upper()[:12] or "STD"
-                t = re.sub(r"[^A-Za-z0-9]", "", str(talla)).upper()[:6] or "OS"
-                return f"np_stock_{c}_{t}"
-
-            # Render
-            for color in v_colors:
-                st.markdown(f"**Color:** {color}")
-                cols = st.columns(len(v_sizes)) if len(v_sizes) <= 5 else None
-
-                row_vals = []
-                for j, talla in enumerate(v_sizes):
-                    key = _stk_key(color, talla)
-                    if cols is None:
-                        val = int(st.number_input(f"{talla}", min_value=0, step=1, value=0, key=key))
+                if tiene_colores:
+                    if not color_vals:
+                        st.info("No hay colores en Catalogos. Se usará 'Standard'.")
+                        st.session_state["np_colores_sel"] = ["Standard"]
                     else:
-                        with cols[j]:
-                            val = int(st.number_input(f"{talla}", min_value=0, step=1, value=0, key=key))
-                    stock_map[(color, talla)] = val
-                    row_vals.append(val)
-
-                subtotal = int(sum(row_vals))
-                total_units += subtotal
-                st.caption(f"Total {color}: {subtotal} u.")
-                st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
-
-            st.caption(f"**Total de unidades:** {int(total_units)}")
-
-            # Guardar (único momento donde se escribe en Sheets)
-            can_save = True
-            errors: list[str] = []
-
-            nombre = str(st.session_state.get("np_nombre", "")).strip()
-            if not nombre:
-                can_save = False
-                errors.append("Escribí el Nombre del producto.")
-
-            if not st.session_state.get("np_allow_stock0", False) and int(total_units) <= 0:
-                can_save = False
-                errors.append("El stock total es 0 (activá 'Permitir guardar con stock 0' si querés igual).")
-
-            if errors:
-                st.error("\n".join(errors))
-
-            if st.button("💾 Guardar producto", use_container_width=True, disabled=not can_save):
-                # -----------------------------
-                # Guardado real (con pocas lecturas y cache)
-                # -----------------------------
-                try:
-                    # 1) (Opcional) agregar drop a Catalogos
-                    if bool(st.session_state.get("np_add_drop", False)) and str(st.session_state.get("np_new_drop", "")).strip():
-                        nd = str(st.session_state.get("np_new_drop", "")).strip().upper()
-                        nd_code = str(st.session_state.get("np_new_drop_code", "")).strip().upper() or nd
-
-                        cat_write = load_catalogos(conn, ttl_s=600).copy()
-                        cat_write.columns = [str(c).strip() for c in cat_write.columns]
-                        if "Catalogo" in cat_write.columns:
-                            cat_write["Catalogo"] = cat_write["Catalogo"].ffill()
-
-                        already = (
-                            (cat_write.get("Catalogo", "").astype(str).str.upper() == "DROP")
-                            & (cat_write.get("Valor", "").astype(str).str.upper() == nd)
+                        st.multiselect(
+                            "Colores",
+                            options=color_vals,
+                            key="np_colores_sel",
                         )
-                        if not already.any():
-                            new_row = {"Catalogo": "DROP", "Valor": nd, "Codigo": nd_code}
-                            cat_write = pd.concat([cat_write, pd.DataFrame([new_row])], ignore_index=True)
-                            save_sheet(conn, SHEET_CATALOGOS, cat_write)
+                else:
+                    st.session_state["np_colores_sel"] = ["Standard"]
 
-                    # 2) Determina códigos (drop/product/color)
-                    drop_sel = str(st.session_state.get("np_drop_sel", "")).strip()
-                    drop_code = None
-                    for d in drops:
-                        if str(d.get("valor", "")).strip() == drop_sel:
-                            drop_code = str(d.get("codigo", "")).strip()
-                            break
-                    if not drop_code or str(drop_code).lower() == "nan":
-                        drop_code = drop_sel.strip().upper()
+                # Botones de acción (sin escribir nada)
+                b1, b2 = st.columns(2)
+                with b1:
+                    if st.button("✅ Aplicar variantes", use_container_width=True):
+                        _np_lock_variants()
+                        st.rerun()
+                with b2:
+                    if st.button("🧹 Limpiar formulario", use_container_width=True):
+                        _np_reset_all()
+                        st.rerun()
 
-                    raw_pc = str(st.session_state.get("np_prod_code", "")).strip()
-                    raw_pc = re.sub(r"[^A-Za-z0-9]", "", raw_pc).upper()[:3]
-                    if not raw_pc:
-                        raw_pc = "PRD"
-                    if len(raw_pc) < 3:
-                        raw_pc = (raw_pc + "XXX")[:3]
-                    prod_code = raw_pc
-                    if len(prod_code) < 3:
-                        prod_code = (prod_code + "XXX")[:3]
+            # -------------------------------------------------
+            # UI: stock por variante (cuando ya aplicaste variantes)
+            # -------------------------------------------------
+            if locked:
+                v = st.session_state.get("np_variants", {}) or {}
+                v_colors = [str(x) for x in (v.get("colores") or ["Standard"]) if str(x).strip()]
+                v_sizes = [str(x).upper() for x in (v.get("tallas") or ["OS"]) if str(x).strip()]
 
-                    costo = float(st.session_state.get("np_costo", 0.0) or 0.0)
-                    precio = float(st.session_state.get("np_precio", 0.0) or 0.0)
+                st.markdown(
+                    f"**Variantes aplicadas:** {len(v_colors)} color(es) × {len(v_sizes)} talla(s) = **{len(v_colors)*len(v_sizes)} SKU(s)**"
+                )
 
-                    almacen = str(st.session_state.get("np_almacen", "Casa"))
+                top_l, top_r = st.columns([1, 1])
+                with top_l:
+                    if st.button("↩️ Editar variantes", use_container_width=True):
+                        _np_unlock_variants()
+                        st.rerun()
+                with top_r:
+                    if st.button("🧹 Limpiar formulario", use_container_width=True):
+                        _np_reset_all()
+                        st.rerun()
 
-                    # 3) Respeta código existente si el producto ya existe exacto
-                    existing_code = get_existing_product_code(inv_df, nombre)
-                    if existing_code:
-                        prod_code = str(existing_code).strip().upper()[:3]
+                st.markdown("## Stock inicial (unidades)")
 
-                    # 4) Construye filas nuevas
-                    inv_now = load_inventario(conn, ttl_s=45).copy()
-                    existing_skus = set(inv_now["SKU"].astype(str).str.strip().tolist())
+                # Inputs dinámicos por color x talla (sin forms para que no se pierda nada)
+                total_units = 0
+                stock_map: dict[tuple[str, str], int] = {}
 
-                    rows = []
-                    for col in v_colors:
-                        col_label = str(col).strip() if tiene_colores else "Standard"
-                        col_code = color_to_code.get(col_label) or color_to_code.get(col_label.title())
-                        if not col_code:
-                            col_code = re.sub(r"\s+", "", col_label).upper()[:3] or "STD"
+                def _stk_key(color: str, talla: str) -> str:
+                    # key estable y segura
+                    c = re.sub(r"[^A-Za-z0-9]", "", str(color)).upper()[:12] or "STD"
+                    t = re.sub(r"[^A-Za-z0-9]", "", str(talla)).upper()[:6] or "OS"
+                    return f"np_stock_{c}_{t}"
 
-                        for talla in v_sizes:
-                            talla_label = str(talla).strip().upper() if tiene_tallas else "OS"
-                            sku = build_sku(drop_code, prod_code, col_code, talla_label)
+                # Render
+                for color in v_colors:
+                    st.markdown(f"**Color:** {color}")
+                    cols = st.columns(len(v_sizes)) if len(v_sizes) <= 5 else None
 
-                            qty = int(stock_map.get((col, talla), 0) or 0)
-                            stock_casa = qty if almacen == "Casa" else 0
-                            stock_bod = qty if almacen == "Bodega" else 0
+                    row_vals = []
+                    for j, talla in enumerate(v_sizes):
+                        key = _stk_key(color, talla)
+                        if cols is None:
+                            val = int(st.number_input(f"{talla}", min_value=0, step=1, value=0, key=key))
+                        else:
+                            with cols[j]:
+                                val = int(st.number_input(f"{talla}", min_value=0, step=1, value=0, key=key))
+                        stock_map[(color, talla)] = val
+                        row_vals.append(val)
 
-                            rows.append(
-                                {
-                                    "SKU": sku,
-                                    "Drop": drop_code,
-                                    "Producto": nombre,
-                                    "Color": col_label,
-                                    "Talla": talla_label,
-                                    "Stock_Casa": stock_casa,
-                                    "Stock_Bodega": stock_bod,
-                                    "Costo_Unitario": float(costo),
-                                    "Precio_Lista": float(precio),
-                                    "Activo": True,
-                                }
+                    subtotal = int(sum(row_vals))
+                    total_units += subtotal
+                    st.caption(f"Total {color}: {subtotal} u.")
+                    st.markdown("<div style='height:6px'></div>", unsafe_allow_html=True)
+
+                st.caption(f"**Total de unidades:** {int(total_units)}")
+
+                # Guardar (único momento donde se escribe en Sheets)
+                can_save = True
+                errors: list[str] = []
+
+                nombre = str(st.session_state.get("np_nombre", "")).strip()
+                if not nombre:
+                    can_save = False
+                    errors.append("Escribí el Nombre del producto.")
+
+                if not st.session_state.get("np_allow_stock0", False) and int(total_units) <= 0:
+                    can_save = False
+                    errors.append("El stock total es 0 (activá 'Permitir guardar con stock 0' si querés igual).")
+
+                if errors:
+                    st.error("\n".join(errors))
+
+                if st.button("💾 Guardar producto", use_container_width=True, disabled=not can_save):
+                    # -----------------------------
+                    # Guardado real (con pocas lecturas y cache)
+                    # -----------------------------
+                    try:
+                        # 1) (Opcional) agregar drop a Catalogos
+                        if bool(st.session_state.get("np_add_drop", False)) and str(st.session_state.get("np_new_drop", "")).strip():
+                            nd = str(st.session_state.get("np_new_drop", "")).strip().upper()
+                            nd_code = str(st.session_state.get("np_new_drop_code", "")).strip().upper() or nd
+
+                            cat_write = load_catalogos(conn, ttl_s=600).copy()
+                            cat_write.columns = [str(c).strip() for c in cat_write.columns]
+                            if "Catalogo" in cat_write.columns:
+                                cat_write["Catalogo"] = cat_write["Catalogo"].ffill()
+
+                            already = (
+                                (cat_write.get("Catalogo", "").astype(str).str.upper() == "DROP")
+                                & (cat_write.get("Valor", "").astype(str).str.upper() == nd)
                             )
+                            if not already.any():
+                                new_row = {"Catalogo": "DROP", "Valor": nd, "Codigo": nd_code}
+                                cat_write = pd.concat([cat_write, pd.DataFrame([new_row])], ignore_index=True)
+                                save_sheet(conn, SHEET_CATALOGOS, cat_write)
 
-                    new_skus = [r["SKU"] for r in rows]
-                    ok_unique, dups = ensure_unique_skus(new_skus, existing_skus)
-                    if not ok_unique:
-                        st.error("Estos SKUs ya existen en Inventario: " + ", ".join(dups))
-                        st.stop()
+                        # 2) Determina códigos (drop/product/color)
+                        drop_sel = str(st.session_state.get("np_drop_sel", "")).strip()
+                        drop_code = None
+                        for d in drops:
+                            if str(d.get("valor", "")).strip() == drop_sel:
+                                drop_code = str(d.get("codigo", "")).strip()
+                                break
+                        if not drop_code or str(drop_code).lower() == "nan":
+                            drop_code = drop_sel.strip().upper()
 
-                    # 5) Append y guardar
-                    inv_out = inv_now.copy()
-                    for col in INV_REQUIRED:
-                        if col not in inv_out.columns:
-                            inv_out[col] = None
+                        raw_pc = str(st.session_state.get("np_prod_code", "")).strip()
+                        raw_pc = re.sub(r"[^A-Za-z0-9]", "", raw_pc).upper()[:3]
+                        if not raw_pc:
+                            raw_pc = "PRD"
+                        if len(raw_pc) < 3:
+                            raw_pc = (raw_pc + "XXX")[:3]
+                        prod_code = raw_pc
+                        if len(prod_code) < 3:
+                            prod_code = (prod_code + "XXX")[:3]
 
-                    inv_out = pd.concat([inv_out, pd.DataFrame(rows)], ignore_index=True)
-                    save_sheet(conn, SHEET_INVENTARIO, inv_out)
+                        costo = float(st.session_state.get("np_costo", 0.0) or 0.0)
+                        precio = float(st.session_state.get("np_precio", 0.0) or 0.0)
 
-                    st.success(f"Producto creado: {nombre} ({len(rows)} SKU(s))")
+                        almacen = str(st.session_state.get("np_almacen", "Casa"))
 
-                    # Limpia cache SOLO al escribir
-                    st.cache_data.clear()
-                    _np_reset_all()
-                    st.rerun()
+                        # 3) Respeta código existente si el producto ya existe exacto
+                        existing_code = get_existing_product_code(inv_df, nombre)
+                        if existing_code:
+                            prod_code = str(existing_code).strip().upper()[:3]
 
-                except Exception as e:
-                    st.error("Error al guardar el producto.")
-                    st.exception(e)
+                        # 4) Construye filas nuevas
+                        inv_now = load_inventario(conn, ttl_s=45).copy()
+                        existing_skus = set(inv_now["SKU"].astype(str).str.strip().tolist())
+
+                        rows = []
+                        for col in v_colors:
+                            col_label = str(col).strip() if tiene_colores else "Standard"
+                            col_code = color_to_code.get(col_label) or color_to_code.get(col_label.title())
+                            if not col_code:
+                                col_code = re.sub(r"\s+", "", col_label).upper()[:3] or "STD"
+
+                            for talla in v_sizes:
+                                talla_label = str(talla).strip().upper() if tiene_tallas else "OS"
+                                sku = build_sku(drop_code, prod_code, col_code, talla_label)
+
+                                qty = int(stock_map.get((col, talla), 0) or 0)
+                                stock_casa = qty if almacen == "Casa" else 0
+                                stock_bod = qty if almacen == "Bodega" else 0
+
+                                rows.append(
+                                    {
+                                        "SKU": sku,
+                                        "Drop": drop_code,
+                                        "Producto": nombre,
+                                        "Color": col_label,
+                                        "Talla": talla_label,
+                                        "Stock_Casa": stock_casa,
+                                        "Stock_Bodega": stock_bod,
+                                        "Costo_Unitario": float(costo),
+                                        "Precio_Lista": float(precio),
+                                        "Activo": True,
+                                    }
+                                )
+
+                        new_skus = [r["SKU"] for r in rows]
+                        ok_unique, dups = ensure_unique_skus(new_skus, existing_skus)
+                        if not ok_unique:
+                            st.error("Estos SKUs ya existen en Inventario: " + ", ".join(dups))
+                            st.stop()
+
+                        # 5) Append y guardar
+                        inv_out = inv_now.copy()
+                        for col in INV_REQUIRED:
+                            if col not in inv_out.columns:
+                                inv_out[col] = None
+
+                        inv_out = pd.concat([inv_out, pd.DataFrame(rows)], ignore_index=True)
+                        save_sheet(conn, SHEET_INVENTARIO, inv_out)
+
+                        st.success(f"Producto creado: {nombre} ({len(rows)} SKU(s))")
+
+                        # Limpia cache SOLO al escribir
+                        st.cache_data.clear()
+                        _np_reset_all()
+                        st.rerun()
+
+                    except Exception as e:
+                        st.error("Error al guardar el producto.")
+                        st.exception(e)
 # -----------------------------
 # TAB: Finanzas (Nivel 1 · 2 · 3)
 # -----------------------------
@@ -2138,207 +2296,4 @@ with tab_ventas:
 
         except Exception as e:
             st.error("Error al registrar la venta.")
-            st.exception(e)    with st.expander("💸 Egresos", expanded=False):
-            # UI estilo "cards" (similar a tu referencia)
-            st.markdown(
-                """
-                <style>
-                  /* --- EGRESOS UI --- */
-                  .eg-card{
-                    border: 1px solid rgba(255,255,255,0.08);
-                    background: rgba(255,255,255,0.03);
-                    border-radius: 18px;
-                    padding: 18px 18px 14px 18px;
-                    margin-bottom: 14px;
-                  }
-                  .eg-title{
-                    font-size: 14px;
-                    opacity: 0.75;
-                    margin-bottom: 6px;
-                  }
-                  /* Hacer el input del monto más grande */
-                  .egresos-scope div[data-testid="stNumberInput"] input[type="number"]{
-                    font-size: 44px !important;
-                    font-weight: 800 !important;
-                    height: 64px !important;
-                    padding-top: 6px !important;
-                    padding-bottom: 6px !important;
-                  }
-                  /* Pills para radio horizontal */
-                  .egresos-scope div[role="radiogroup"]{gap: 10px;}
-                  .egresos-scope div[role="radiogroup"] label{
-                    border: 1px solid rgba(255,255,255,0.12);
-                    border-radius: 999px;
-                    padding: 8px 12px;
-                    background: rgba(255,255,255,0.03);
-                  }
-                  .egresos-scope div[role="radiogroup"] label:hover{
-                    border-color: rgba(0,255,255,0.35);
-                  }
-                  /* Botón principal */
-                  .egresos-scope button[kind="primary"]{
-                    border-radius: 16px !important;
-                    font-size: 20px !important;
-                    font-weight: 800 !important;
-                    padding-top: 16px !important;
-                    padding-bottom: 16px !important;
-                  }
-                </style>
-                """,
-                unsafe_allow_html=True,
-            )
-
-            eg_df = egresos_df_full.copy()
-        st.markdown('<div class="egresos-scope">', unsafe_allow_html=True)
-
-            # Catálogo sugerido de categorías (de lo ya registrado)
-            cat_vals = []
-            if not eg_df.empty and "Categoria" in eg_df.columns:
-                cat_vals = sorted({c for c in eg_df["Categoria"].astype(str).replace({"nan": ""}).tolist() if c.strip()})
-
-            # Drop: desde hoja Catalogos (Catalogo == 'DROP') para que sea coherente
-            drop_opts = ["(Sin drop)"]
-            try:
-                cat_df2 = load_catalogos(conn, ttl_s=600)
-                cat2 = parse_catalogos(cat_df2)
-                _drops2 = cat2.get("drops", [])
-                drop_vals_eg = [d.get("valor", "") for d in _drops2 if str(d.get("valor", "")).strip()]
-                if drop_vals_eg:
-                    drop_opts += drop_vals_eg  # respeta el orden del catálogo
-                else:
-                    # fallback: si ya existen drop_vals en memoria, usarlos
-                    try:
-                        if "drop_vals" in locals() and drop_vals:
-                            drop_opts += [d for d in drop_vals if str(d).strip()]
-                    except Exception:
-                        pass
-            except Exception:
-                # fallback duro
-                try:
-                    if "drop_vals" in locals() and drop_vals:
-                        drop_opts += [d for d in drop_vals if str(d).strip()]
-                except Exception:
-                    pass
-
-            # -----------------------------
-            # Formulario principal (look tipo referencia)
-            # -----------------------------
-            with st.form("form_egresos_card", clear_on_submit=True):
-                st.markdown('<div class="eg-card">', unsafe_allow_html=True)
-                eg_monto = st.number_input("Monto", min_value=0.0, value=0.0, step=1.0, format="%.2f", key="eg_monto")
-                st.markdown("</div>", unsafe_allow_html=True)
-
-                st.markdown('<div class="eg-card">', unsafe_allow_html=True)
-                eg_fecha = st.date_input("Fecha", value=datetime.now().date(), key="eg_fecha")
-                eg_concepto = st.text_input("Concepto", placeholder="Ej: Pago proveedor", key="eg_concepto")
-
-                # Categoría: elegir existente o crear nueva
-                cat_options = (["(Elegir)"] + cat_vals + ["➕ Nueva…"]) if cat_vals else ["(Elegir)", "➕ Nueva…"]
-                eg_cat_choice = st.selectbox("Categoría", cat_options, key="eg_cat_choice")
-                if eg_cat_choice == "➕ Nueva…":
-                    eg_categoria = st.text_input("Nueva categoría", placeholder="Ej: Producción / Marketing / Envíos / Impuestos...", key="eg_cat_new")
-                elif eg_cat_choice == "(Elegir)":
-                    eg_categoria = ""
-                else:
-                    eg_categoria = eg_cat_choice
-                st.markdown("</div>", unsafe_allow_html=True)
-
-                st.markdown('<div class="eg-card">', unsafe_allow_html=True)
-                st.caption("Drop")
-                eg_drop = st.radio(
-                    "Drop",
-                    drop_opts,
-                    horizontal=True,
-                    label_visibility="collapsed",
-                    key="eg_drop",
-                )
-                st.markdown("</div>", unsafe_allow_html=True)
-
-                st.markdown('<div class="eg-card">', unsafe_allow_html=True)
-                eg_notas = st.text_area("Notas (opcional)", placeholder="Detalles, factura, método de pago, etc.", key="eg_notas", height=120)
-                st.markdown("</div>", unsafe_allow_html=True)
-
-                ok = st.form_submit_button("Guardar egreso", use_container_width=True)
-
-            if ok:
-                try:
-                    # Releer sin cache para evitar duplicados si hubo cambios recientes
-                    eg_all = load_egresos(conn, ttl_s=0)
-
-                    year = int(pd.Timestamp.now(tz=LOCAL_TZ).year)
-                    eid = next_egreso_id(eg_all, year)
-
-                    new_row = {
-                        "Egreso_ID": eid,
-                        "Fecha": str(eg_fecha),
-                        "Concepto": str(eg_concepto or "").strip(),
-                        "Categoria": str(eg_categoria or "").strip(),
-                        "Monto": float(eg_monto or 0.0),
-                        "Notas": str(eg_notas or "").strip(),
-                        "Drop": "" if eg_drop == "(Sin drop)" else str(eg_drop).strip(),
-                    }
-
-                    # Validaciones mínimas
-                    if not new_row["Concepto"]:
-                        st.error("Poné un Concepto para el egreso.")
-                    elif new_row["Monto"] <= 0:
-                        st.error("El Monto debe ser mayor que 0.")
-                    else:
-                        eg_all = _align_required_columns(eg_all, EGRESOS_REQUIRED)
-                        eg_all = pd.concat([eg_all, pd.DataFrame([new_row])], ignore_index=True)
-
-                        save_sheet(conn, SHEET_EGRESOS, eg_all)
-                        st.success(f"Egreso registrado: {eid}")
-                        st.rerun()
-
-                except Exception as e:
-                    st.error("Error al guardar el egreso.")
-                    st.exception(e)
-
-            # -----------------------------
-            # Historial (opcional, plegado)
-            # -----------------------------
-            with st.expander("Ver historial / filtros", expanded=False):
-                eg_df2 = egresos_df_full.copy()
-
-                f1, f2, f3 = st.columns([1, 1, 1])
-                with f1:
-                    eg_only_drop = st.selectbox(
-                        "Drop (filtrar)",
-                        ["(Todos)"] + sorted([d for d in eg_df2.get("Drop", pd.Series()).astype(str).replace({"nan": ""}).tolist() if d.strip()]) if not eg_df2.empty else ["(Todos)"],
-                        key="eg_drop_filter",
-                    )
-                with f2:
-                    eg_cat_vals2 = []
-                    if not eg_df2.empty and "Categoria" in eg_df2.columns:
-                        eg_cat_vals2 = sorted({c for c in eg_df2["Categoria"].astype(str).replace({"nan": ""}).tolist() if c.strip()})
-                    eg_only_cat = st.selectbox("Categoría (filtrar)", ["(Todas)"] + eg_cat_vals2, key="eg_cat_filter")
-                with f3:
-                    eg_top_n = st.number_input("Mostrar últimos", min_value=5, max_value=200, value=25, step=5, key="eg_top_n")
-
-                eg_show = eg_df2.copy()
-                if not eg_show.empty:
-                    if eg_only_drop != "(Todos)" and "Drop" in eg_show.columns:
-                        eg_show = eg_show[eg_show["Drop"].astype(str).str.strip() == eg_only_drop].copy()
-                    if eg_only_cat != "(Todas)" and "Categoria" in eg_show.columns:
-                        eg_show = eg_show[eg_show["Categoria"].astype(str).str.strip() == eg_only_cat].copy()
-
-                    if "Fecha" in eg_show.columns:
-                        eg_show["_FechaSort"] = pd.to_datetime(eg_show["Fecha"], errors="coerce")
-                        eg_show = eg_show.sort_values(by=["_FechaSort"], ascending=False)
-                        eg_show = eg_show.drop(columns=["_FechaSort"], errors="ignore")
-
-                    eg_show = eg_show.head(int(eg_top_n))
-
-                total_monto = float(eg_show["Monto"].sum()) if (not eg_show.empty and "Monto" in eg_show.columns) else 0.0
-                st.caption(f"Total (vista actual): {money(total_monto)}")
-
-                st.dataframe(
-                    eg_show[["Egreso_ID", "Fecha", "Concepto", "Categoria", "Monto", "Drop", "Notas"]]
-                    if (not eg_show.empty and set(["Egreso_ID","Fecha","Concepto","Categoria","Monto","Drop","Notas"]).issubset(set(eg_show.columns)))
-                    else eg_show,
-                    use_container_width=True,
-                    hide_index=True,
-                )
-
-    
+            st.exception(e)
