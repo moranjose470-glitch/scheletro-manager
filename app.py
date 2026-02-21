@@ -23,8 +23,57 @@ from itertools import product as iterproduct
 
 import pandas as pd
 import streamlit as st
+import hmac
 from streamlit_gsheets import GSheetsConnection
 
+
+
+
+# =========================
+# Seguridad: Password Gate
+# =========================
+def require_password() -> None:
+    """Bloquea la app con una contraseña guardada en Streamlit Secrets.
+
+    En Streamlit Cloud -> Settings -> Secrets agrega:
+    APP_PASSWORD = "TU_CLAVE"
+    """
+    app_pw = st.secrets.get("APP_PASSWORD", None)
+
+    # Si ya inició sesión, continúa.
+    if st.session_state.get("_auth_ok", False):
+        return
+
+    st.title("SCHELETRO Manager 🔒")
+    st.markdown("### Acceso restringido")
+
+    pw = st.text_input("Contraseña", type="password", key="_auth_pw")
+
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        login = st.button("Entrar", use_container_width=True)
+    with col2:
+        st.button(
+            "Limpiar",
+            use_container_width=True,
+            on_click=lambda: st.session_state.update({"_auth_pw": ""}),
+        )
+
+    if app_pw is None:
+        st.error("No está configurado APP_PASSWORD en Secrets. Ve a Settings → Secrets y agrégalo.")
+        st.stop()
+
+    if login:
+        if hmac.compare_digest(str(pw), str(app_pw)):
+            st.session_state["_auth_ok"] = True
+            st.session_state["_auth_pw"] = ""
+            st.success("Acceso concedido.")
+            st.rerun()
+        else:
+            st.error("Contraseña incorrecta.")
+            st.stop()
+    else:
+        st.stop()
 
 # -----------------------------
 # Sheets / Tabs (DEBEN coincidir con tus pestañas)
@@ -607,6 +656,10 @@ def reset_sale_form() -> None:
 # App
 # -----------------------------
 st.set_page_config(page_title="SCHELETRO Manager", page_icon="🦴", layout="centered", initial_sidebar_state="collapsed")
+
+# 🔒 Bloqueo antes de cargar datos
+
+
 inject_css()
 init_state()
 
@@ -1538,93 +1591,130 @@ with tab_finanzas:
                     else:
                         st.markdown("—")
 
-    # -----------------------------------
-    # Nivel 2: Progreso por producto (recuperación)
-    # -----------------------------------
-    with card():
-        st.markdown("### Progreso por Producto (Recuperación de Inversión)")
-        if invst_df.empty:
-            st.warning("No hay inversiones registradas. Hoja: **Inversiones**.")
-        else:
+# -----------------------------------
+# Nivel 2: Progreso por producto (recuperación)
+# -----------------------------------
+with card():
+    st.markdown("### Progreso por Producto (Recuperación de Inversión)")
+
+    if lines_f.empty:
+        st.info("Aún no hay ventas para mostrar.")
+    else:
+        # Nota: esta sección muestra TODOS los productos con ventas en el filtro actual.
+        # Si un producto no tiene inversión asignada (Tipo=PRODUCTO en la hoja Inversiones),
+        # se mostrará como "Inversión no definida" en lugar de ocultarse.
+        inv_prod = pd.DataFrame(columns=["Tipo", "Referencia", "Monto_Invertido"])
+        if not invst_df.empty:
             inv_prod = invst_df.copy()
             inv_prod["Tipo"] = inv_prod["Tipo"].astype(str).str.upper().str.strip()
             inv_prod["Referencia"] = inv_prod["Referencia"].astype(str).str.strip()
             inv_prod["Monto_Invertido"] = pd.to_numeric(inv_prod["Monto_Invertido"], errors="coerce").fillna(0.0)
-
             inv_prod = inv_prod[inv_prod["Tipo"] == "PRODUCTO"].copy()
+
             if active_drop:
-                # restringe a productos vendidos en ese drop
-                prods_in_drop = sorted([p for p in lines_f["Producto"].dropna().astype(str).str.strip().unique().tolist() if p])
+                # restringe a productos vendidos en este filtro
+                prods_in_drop = sorted(
+                    [
+                        p
+                        for p in lines_f["Producto"].dropna().astype(str).str.strip().unique().tolist()
+                        if p
+                    ]
+                )
                 inv_prod = inv_prod[inv_prod["Referencia"].isin(prods_in_drop)].copy()
+        else:
+            st.warning("No hay inversiones registradas. Hoja: **Inversiones**. Se mostrará progreso sin inversión asignada.")
 
-            if inv_prod.empty:
-                st.info("No hay inversiones por PRODUCTO para este filtro.")
-            else:
-                # Cálculos por producto
-                g = lines_f.groupby("Producto", as_index=False).agg(
-                    Unidades=("Cantidad", "sum"),
-                    Ingreso=("Subtotal_Linea", "sum"),
-                    Neto=("_Monto_Asignado", "sum"),
-                )
-                # El group de arriba con nombre raro, lo corregimos:
-                if "Neto" not in g.columns:
-                    g["Neto"] = lines_f.groupby("Producto")["_Monto_Asignado"].sum().values
+        # Cálculos por producto (basado en el filtro actual)
+        g = lines_f.groupby("Producto", as_index=False).agg(
+            Unidades=("Cantidad", "sum"),
+            Ingreso=("Subtotal_Linea", "sum"),
+            Neto=("_Monto_Asignado", "sum"),
+        )
 
-                # merge inversión
-                inv_map = inv_prod.groupby("Referencia", as_index=False)["Monto_Invertido"].sum()
-                g = g.merge(inv_map, left_on="Producto", right_on="Referencia", how="left")
-                g["Monto_Invertido"] = pd.to_numeric(g["Monto_Invertido"], errors="coerce").fillna(0.0)
+        # merge inversión (si existe)
+        if not inv_prod.empty:
+            inv_map = inv_prod.groupby("Referencia", as_index=False)["Monto_Invertido"].sum()
+            g = g.merge(inv_map, left_on="Producto", right_on="Referencia", how="left")
+            g["Monto_Invertido"] = pd.to_numeric(g["Monto_Invertido"], errors="coerce").fillna(0.0)
+        else:
+            g["Monto_Invertido"] = 0.0
 
-                # precio efectivo promedio y costo unitario promedio
-                avg_price = (
-                    lines_f.groupby("Producto")
-                    .apply(lambda d: (d["Subtotal_Linea"].sum() / max(1, d["Cantidad"].sum())))
-                    .rename("Precio_Prom")
-                    .reset_index()
-                )
-                avg_cost = (
-                    lines_f.groupby("Producto")
-                    .apply(lambda d: (d["COGS_Linea"].sum() / max(1, d["Cantidad"].sum())))
-                    .rename("Costo_Prom")
-                    .reset_index()
-                )
-                g = g.merge(avg_price, on="Producto", how="left").merge(avg_cost, on="Producto", how="left")
-                g["Precio_Prom"] = pd.to_numeric(g["Precio_Prom"], errors="coerce").fillna(0.0)
-                g["Costo_Prom"] = pd.to_numeric(g["Costo_Prom"], errors="coerce").fillna(0.0)
+        # precio efectivo promedio y costo unitario promedio
+        avg_price = (
+            lines_f.groupby("Producto")
+            .apply(lambda d: (d["Subtotal_Linea"].sum() / max(1, d["Cantidad"].sum())))
+            .rename("Precio_Prom")
+            .reset_index()
+        )
+        avg_cost = (
+            lines_f.groupby("Producto")
+            .apply(lambda d: (d["COGS_Linea"].sum() / max(1, d["Cantidad"].sum())))
+            .rename("Costo_Prom")
+            .reset_index()
+        )
+        g = g.merge(avg_price, on="Producto", how="left").merge(avg_cost, on="Producto", how="left")
+        g["Precio_Prom"] = pd.to_numeric(g["Precio_Prom"], errors="coerce").fillna(0.0)
+        g["Costo_Prom"] = pd.to_numeric(g["Costo_Prom"], errors="coerce").fillna(0.0)
 
-                # Orden por progreso
-                g["Pct_Rec"] = g.apply(lambda r: (r["Neto"] / r["Monto_Invertido"]) if r["Monto_Invertido"] > 0 else 0.0, axis=1)
-                g = g.sort_values("Pct_Rec", ascending=False)
+        # Orden: primero los que tienen inversión (por %), luego los sin inversión (por neto)
+        def _pct_rec(row: pd.Series) -> float:
+            invv = float(row.get("Monto_Invertido", 0.0) or 0.0)
+            neto = float(row.get("Neto", 0.0) or 0.0)
+            if invv > 0:
+                return neto / invv
+            return -1.0
 
-                for _, r in g.iterrows():
-                    prod = str(r["Producto"])
-                    invv = float(r["Monto_Invertido"])
-                    if invv <= 0:
-                        continue
+        g["Pct_Rec"] = g.apply(_pct_rec, axis=1)
+        g = g.sort_values(["Pct_Rec", "Neto"], ascending=[False, False])
 
-                    pct = max(0.0, min(1.0, float(r["Neto"]) / invv))
-                    with st.expander(f"{prod}", expanded=False):
-                        st.progress(int(round(pct * 100)))
-                        falta = max(0.0, invv - float(r["Neto"]))
-                        unidades_sold = int(r["Unidades"])
-                        precio_prom = float(r["Precio_Prom"])
-                        # unidades para recuperar basado en neto promedio por unidad (neto/unidad)
-                        neto_unit = float(r["Neto"]) / max(1, unidades_sold)
-                        if unidades_sold == 0:
-                            unidades_target = 0
-                        else:
-                            unidades_target = int((invv / max(0.01, neto_unit)) + 0.999)
+        missing_inv = int((g["Monto_Invertido"] <= 0).sum())
+        if missing_inv > 0:
+            st.caption(
+                f"⚠️ {missing_inv} producto(s) no tienen inversión asignada (Tipo=PRODUCTO en **Inversiones**). "
+                "Aún así se muestran para que veas ventas/recuperado."
+            )
 
-                        if pct >= 1.0:
-                            util_unit = max(0.0, precio_prom - float(r["Costo_Prom"]))
-                            st.success(f"¡Recuperado! Cada venta ahora aporta aprox. {money(util_unit)} de margen bruto por unidad.")
-                        else:
-                            st.caption(
-                                f"Has recuperado {money(float(r['Neto']))} de {money(invv)}. "
-                                f"Te faltan {money(falta)}."
-                            )
-                            if unidades_target > 0:
-                                st.caption(f"Unidades vendidas: {unidades_sold} de {unidades_target} (estimado).")
+        for _, r in g.iterrows():
+            prod = str(r["Producto"])
+            invv = float(r["Monto_Invertido"])
+            neto = float(r["Neto"])
+            unidades_sold = int(r["Unidades"])
+            precio_prom = float(r["Precio_Prom"])
+            costo_prom = float(r["Costo_Prom"])
+
+            with st.expander(f"{prod}", expanded=False):
+                if invv > 0:
+                    pct = max(0.0, min(1.0, neto / invv))
+                    st.progress(int(round(pct * 100)))
+
+                    falta = max(0.0, invv - neto)
+                    st.caption(f"Has recuperado {money(neto)} de {money(invv)}. Te faltan {money(falta)}.")
+
+                    # Unidades estimadas para recuperar (basado en neto promedio por unidad)
+                    if unidades_sold > 0:
+                        neto_unit = neto / max(1, unidades_sold)
+                        unidades_target = int((invv / max(0.01, neto_unit)) + 0.999)
+                        if unidades_target > 0:
+                            st.caption(f"Unidades vendidas: {unidades_sold} de {unidades_target} (estimado).")
+
+                    if pct >= 1.0:
+                        util_unit = max(0.0, precio_prom - costo_prom)
+                        st.success(
+                            f"¡Recuperado! Cada venta ahora aporta aprox. {money(util_unit)} de margen bruto por unidad."
+                        )
+                else:
+                    # No ocultar el producto: mostrarlo como pendiente de inversión
+                    st.progress(0)
+                    st.warning("Inversión no definida para este producto.")
+                    st.caption(f"Recuperado (neto asignado en el periodo): {money(neto)}.")
+                    st.caption(f"Unidades vendidas: {unidades_sold}.")
+                    st.caption(
+                        "Para activar recuperación, agrega una fila en **Inversiones** con "
+                        "**Tipo=PRODUCTO** y **Referencia** exactamente igual al nombre del producto."
+                    )
+
+                st.caption(f"Precio promedio: {money(precio_prom)}  |  Costo promedio: {money(costo_prom)}")
+
 
     # -----------------------------------
     # Nivel 3: Producto por producto (finanzas empresa)
