@@ -1591,184 +1591,184 @@ with tab_finanzas:
                     else:
                         st.markdown("—")
 
-# -----------------------------------
-# Nivel 2: Progreso por producto (recuperación)
-# -----------------------------------
-with card():
-    st.markdown("### Progreso por Producto (Recuperación de Inversión)")
-
-    if lines_f.empty:
-        st.info("Aún no hay ventas para mostrar.")
-    else:
-        # Nota: esta sección muestra TODOS los productos con ventas en el filtro actual.
-        # Si un producto no tiene inversión asignada (Tipo=PRODUCTO en la hoja Inversiones),
-        # se mostrará como "Inversión no definida" en lugar de ocultarse.
-        inv_prod = pd.DataFrame(columns=["Tipo", "Referencia", "Monto_Invertido"])
-        if not invst_df.empty:
-            inv_prod = invst_df.copy()
-            inv_prod["Tipo"] = inv_prod["Tipo"].astype(str).str.upper().str.strip()
-            inv_prod["Referencia"] = inv_prod["Referencia"].astype(str).str.strip()
-            inv_prod["Monto_Invertido"] = pd.to_numeric(inv_prod["Monto_Invertido"], errors="coerce").fillna(0.0)
-            inv_prod = inv_prod[inv_prod["Tipo"] == "PRODUCTO"].copy()
-
-            if active_drop:
-                # restringe a productos vendidos en este filtro
-                prods_in_drop = sorted(
-                    [
-                        p
-                        for p in lines_f["Producto"].dropna().astype(str).str.strip().unique().tolist()
-                        if p
-                    ]
-                )
-                inv_prod = inv_prod[inv_prod["Referencia"].isin(prods_in_drop)].copy()
-        else:
-            st.warning("No hay inversiones registradas. Hoja: **Inversiones**. Se mostrará progreso sin inversión asignada.")
-
-        # Cálculos por producto (basado en el filtro actual)
-        g = lines_f.groupby("Producto", as_index=False).agg(
-            Unidades=("Cantidad", "sum"),
-            Ingreso=("Subtotal_Linea", "sum"),
-            Neto=("_Monto_Asignado", "sum"),
-        )
-
-        # merge inversión (si existe)
-        if not inv_prod.empty:
-            inv_map = inv_prod.groupby("Referencia", as_index=False)["Monto_Invertido"].sum()
-            g = g.merge(inv_map, left_on="Producto", right_on="Referencia", how="left")
-            g["Monto_Invertido"] = pd.to_numeric(g["Monto_Invertido"], errors="coerce").fillna(0.0)
-        else:
-            g["Monto_Invertido"] = 0.0
-
-        # precio efectivo promedio y costo unitario promedio
-        avg_price = (
-            lines_f.groupby("Producto")
-            .apply(lambda d: (d["Subtotal_Linea"].sum() / max(1, d["Cantidad"].sum())))
-            .rename("Precio_Prom")
-            .reset_index()
-        )
-        avg_cost = (
-            lines_f.groupby("Producto")
-            .apply(lambda d: (d["COGS_Linea"].sum() / max(1, d["Cantidad"].sum())))
-            .rename("Costo_Prom")
-            .reset_index()
-        )
-        g = g.merge(avg_price, on="Producto", how="left").merge(avg_cost, on="Producto", how="left")
-        g["Precio_Prom"] = pd.to_numeric(g["Precio_Prom"], errors="coerce").fillna(0.0)
-        g["Costo_Prom"] = pd.to_numeric(g["Costo_Prom"], errors="coerce").fillna(0.0)
-
-        # Orden: primero los que tienen inversión (por %), luego los sin inversión (por neto)
-        def _pct_rec(row: pd.Series) -> float:
-            invv = float(row.get("Monto_Invertido", 0.0) or 0.0)
-            neto = float(row.get("Neto", 0.0) or 0.0)
-            if invv > 0:
-                return neto / invv
-            return -1.0
-
-        g["Pct_Rec"] = g.apply(_pct_rec, axis=1)
-        g = g.sort_values(["Pct_Rec", "Neto"], ascending=[False, False])
-
-        missing_inv = int((g["Monto_Invertido"] <= 0).sum())
-        if missing_inv > 0:
-            st.caption(
-                f"⚠️ {missing_inv} producto(s) no tienen inversión asignada (Tipo=PRODUCTO en **Inversiones**). "
-                "Aún así se muestran para que veas ventas/recuperado."
-            )
-
-        for _, r in g.iterrows():
-            prod = str(r["Producto"])
-            invv = float(r["Monto_Invertido"])
-            neto = float(r["Neto"])
-            unidades_sold = int(r["Unidades"])
-            precio_prom = float(r["Precio_Prom"])
-            costo_prom = float(r["Costo_Prom"])
-
-            with st.expander(f"{prod}", expanded=False):
-                if invv > 0:
-                    pct = max(0.0, min(1.0, neto / invv))
-                    st.progress(int(round(pct * 100)))
-
-                    falta = max(0.0, invv - neto)
-                    st.caption(f"Has recuperado {money(neto)} de {money(invv)}. Te faltan {money(falta)}.")
-
-                    # Unidades estimadas para recuperar (basado en neto promedio por unidad)
-                    if unidades_sold > 0:
-                        neto_unit = neto / max(1, unidades_sold)
-                        unidades_target = int((invv / max(0.01, neto_unit)) + 0.999)
-                        if unidades_target > 0:
-                            st.caption(f"Unidades vendidas: {unidades_sold} de {unidades_target} (estimado).")
-
-                    if pct >= 1.0:
-                        util_unit = max(0.0, precio_prom - costo_prom)
-                        st.success(
-                            f"¡Recuperado! Cada venta ahora aporta aprox. {money(util_unit)} de margen bruto por unidad."
-                        )
-                else:
-                    # No ocultar el producto: mostrarlo como pendiente de inversión
-                    st.progress(0)
-                    st.warning("Inversión no definida para este producto.")
-                    st.caption(f"Recuperado (neto asignado en el periodo): {money(neto)}.")
-                    st.caption(f"Unidades vendidas: {unidades_sold}.")
-                    st.caption(
-                        "Para activar recuperación, agrega una fila en **Inversiones** con "
-                        "**Tipo=PRODUCTO** y **Referencia** exactamente igual al nombre del producto."
-                    )
-
-                st.caption(f"Precio promedio: {money(precio_prom)}  |  Costo promedio: {money(costo_prom)}")
-
-
     # -----------------------------------
-    # Nivel 3: Producto por producto (finanzas empresa)
+    # Nivel 2: Progreso por producto (recuperación)
     # -----------------------------------
     with card():
-        st.markdown("### Producto por producto (Finanzas empresa)")
+        st.markdown("### Progreso por Producto (Recuperación de Inversión)")
+    
         if lines_f.empty:
             st.info("Aún no hay ventas para mostrar.")
         else:
-            total_profit = float(pd.to_numeric(lines_f["_Ganancia_Neta_Linea"], errors="coerce").fillna(0.0).sum())
-            p = lines_f.groupby("Producto", as_index=False).agg(
+            # Nota: esta sección muestra TODOS los productos con ventas en el filtro actual.
+            # Si un producto no tiene inversión asignada (Tipo=PRODUCTO en la hoja Inversiones),
+            # se mostrará como "Inversión no definida" en lugar de ocultarse.
+            inv_prod = pd.DataFrame(columns=["Tipo", "Referencia", "Monto_Invertido"])
+            if not invst_df.empty:
+                inv_prod = invst_df.copy()
+                inv_prod["Tipo"] = inv_prod["Tipo"].astype(str).str.upper().str.strip()
+                inv_prod["Referencia"] = inv_prod["Referencia"].astype(str).str.strip()
+                inv_prod["Monto_Invertido"] = pd.to_numeric(inv_prod["Monto_Invertido"], errors="coerce").fillna(0.0)
+                inv_prod = inv_prod[inv_prod["Tipo"] == "PRODUCTO"].copy()
+    
+                if active_drop:
+                    # restringe a productos vendidos en este filtro
+                    prods_in_drop = sorted(
+                        [
+                            p
+                            for p in lines_f["Producto"].dropna().astype(str).str.strip().unique().tolist()
+                            if p
+                        ]
+                    )
+                    inv_prod = inv_prod[inv_prod["Referencia"].isin(prods_in_drop)].copy()
+            else:
+                st.warning("No hay inversiones registradas. Hoja: **Inversiones**. Se mostrará progreso sin inversión asignada.")
+    
+            # Cálculos por producto (basado en el filtro actual)
+            g = lines_f.groupby("Producto", as_index=False).agg(
                 Unidades=("Cantidad", "sum"),
                 Ingreso=("Subtotal_Linea", "sum"),
                 Neto=("_Monto_Asignado", "sum"),
-                COGS=("COGS_Linea", "sum"),
-                Ganancia=("_Ganancia_Neta_Linea", "sum"),
             )
-
-            # arreglar columnas por nombre raro si aplica
-            if "Neto" not in p.columns:
-                p["Neto"] = lines_f.groupby("Producto")["_Monto_Asignado"].sum().values
-            if "Ganancia" not in p.columns:
-                p["Ganancia"] = lines_f.groupby("Producto")["_Ganancia_Neta_Linea"].sum().values
-
-            p["Ingreso"] = pd.to_numeric(p["Ingreso"], errors="coerce").fillna(0.0)
-            p["Neto"] = pd.to_numeric(p["Neto"], errors="coerce").fillna(0.0)
-            p["COGS"] = pd.to_numeric(p["COGS"], errors="coerce").fillna(0.0)
-            p["Ganancia"] = pd.to_numeric(p["Ganancia"], errors="coerce").fillna(0.0)
-            p["Margen_%"] = p.apply(lambda r: (r["Ganancia"] / r["Ingreso"] * 100) if r["Ingreso"] > 0 else 0.0, axis=1)
-            p["Precio_Prom"] = p.apply(lambda r: (r["Ingreso"] / r["Unidades"]) if r["Unidades"] > 0 else 0.0, axis=1)
-            p["Costo_Prom"] = p.apply(lambda r: (r["COGS"] / r["Unidades"]) if r["Unidades"] > 0 else 0.0, axis=1)
-            p["Ganancia_U"] = p.apply(lambda r: (r["Ganancia"] / r["Unidades"]) if r["Unidades"] > 0 else 0.0, axis=1)
-            p = p.sort_values("Ganancia", ascending=False)
-
-            for _, r in p.iterrows():
+    
+            # merge inversión (si existe)
+            if not inv_prod.empty:
+                inv_map = inv_prod.groupby("Referencia", as_index=False)["Monto_Invertido"].sum()
+                g = g.merge(inv_map, left_on="Producto", right_on="Referencia", how="left")
+                g["Monto_Invertido"] = pd.to_numeric(g["Monto_Invertido"], errors="coerce").fillna(0.0)
+            else:
+                g["Monto_Invertido"] = 0.0
+    
+            # precio efectivo promedio y costo unitario promedio
+            avg_price = (
+                lines_f.groupby("Producto")
+                .apply(lambda d: (d["Subtotal_Linea"].sum() / max(1, d["Cantidad"].sum())))
+                .rename("Precio_Prom")
+                .reset_index()
+            )
+            avg_cost = (
+                lines_f.groupby("Producto")
+                .apply(lambda d: (d["COGS_Linea"].sum() / max(1, d["Cantidad"].sum())))
+                .rename("Costo_Prom")
+                .reset_index()
+            )
+            g = g.merge(avg_price, on="Producto", how="left").merge(avg_cost, on="Producto", how="left")
+            g["Precio_Prom"] = pd.to_numeric(g["Precio_Prom"], errors="coerce").fillna(0.0)
+            g["Costo_Prom"] = pd.to_numeric(g["Costo_Prom"], errors="coerce").fillna(0.0)
+    
+            # Orden: primero los que tienen inversión (por %), luego los sin inversión (por neto)
+            def _pct_rec(row: pd.Series) -> float:
+                invv = float(row.get("Monto_Invertido", 0.0) or 0.0)
+                neto = float(row.get("Neto", 0.0) or 0.0)
+                if invv > 0:
+                    return neto / invv
+                return -1.0
+    
+            g["Pct_Rec"] = g.apply(_pct_rec, axis=1)
+            g = g.sort_values(["Pct_Rec", "Neto"], ascending=[False, False])
+    
+            missing_inv = int((g["Monto_Invertido"] <= 0).sum())
+            if missing_inv > 0:
+                st.caption(
+                    f"⚠️ {missing_inv} producto(s) no tienen inversión asignada (Tipo=PRODUCTO en **Inversiones**). "
+                    "Aún así se muestran para que veas ventas/recuperado."
+                )
+    
+            for _, r in g.iterrows():
                 prod = str(r["Producto"])
+                invv = float(r["Monto_Invertido"])
+                neto = float(r["Neto"])
+                unidades_sold = int(r["Unidades"])
+                precio_prom = float(r["Precio_Prom"])
+                costo_prom = float(r["Costo_Prom"])
+    
                 with st.expander(f"{prod}", expanded=False):
-                    cols = st.columns(3)
-                    cols[0].markdown(f"**Unidades:** {int(r['Unidades'])}")
-                    cols[1].markdown(f"**Ingreso:** {money(float(r['Ingreso']))}")
-                    cols[2].markdown(f"**Neto recibido:** {money(float(r['Neto']))}")
-
-                    cols2 = st.columns(3)
-                    cols2[0].markdown(f"**COGS:** {money(float(r['COGS']))}")
-                    cols2[1].markdown(f"**Ganancia neta:** {money(float(r['Ganancia']))}")
-                    cols2[2].markdown(f"**Margen:** {float(r['Margen_%']):.1f}%")
-
-                    cols3 = st.columns(3)
-                    cols3[0].markdown(f"**Precio prom.:** {money(float(r['Precio_Prom']))}")
-                    cols3[1].markdown(f"**Costo prom.:** {money(float(r['Costo_Prom']))}")
-                    cols3[2].markdown(f"**Ganancia/unidad:** {money(float(r['Ganancia_U']))}")
-
-                    contrib = (float(r["Ganancia"]) / total_profit * 100) if total_profit != 0 else 0.0
-                    st.caption(f"Contribución a la ganancia total: {contrib:.1f}%")
+                    if invv > 0:
+                        pct = max(0.0, min(1.0, neto / invv))
+                        st.progress(int(round(pct * 100)))
+    
+                        falta = max(0.0, invv - neto)
+                        st.caption(f"Has recuperado {money(neto)} de {money(invv)}. Te faltan {money(falta)}.")
+    
+                        # Unidades estimadas para recuperar (basado en neto promedio por unidad)
+                        if unidades_sold > 0:
+                            neto_unit = neto / max(1, unidades_sold)
+                            unidades_target = int((invv / max(0.01, neto_unit)) + 0.999)
+                            if unidades_target > 0:
+                                st.caption(f"Unidades vendidas: {unidades_sold} de {unidades_target} (estimado).")
+    
+                        if pct >= 1.0:
+                            util_unit = max(0.0, precio_prom - costo_prom)
+                            st.success(
+                                f"¡Recuperado! Cada venta ahora aporta aprox. {money(util_unit)} de margen bruto por unidad."
+                            )
+                    else:
+                        # No ocultar el producto: mostrarlo como pendiente de inversión
+                        st.progress(0)
+                        st.warning("Inversión no definida para este producto.")
+                        st.caption(f"Recuperado (neto asignado en el periodo): {money(neto)}.")
+                        st.caption(f"Unidades vendidas: {unidades_sold}.")
+                        st.caption(
+                            "Para activar recuperación, agrega una fila en **Inversiones** con "
+                            "**Tipo=PRODUCTO** y **Referencia** exactamente igual al nombre del producto."
+                        )
+    
+                    st.caption(f"Precio promedio: {money(precio_prom)}  |  Costo promedio: {money(costo_prom)}")
+    
+    
+        # -----------------------------------
+        # Nivel 3: Producto por producto (finanzas empresa)
+        # -----------------------------------
+        with card():
+            st.markdown("### Producto por producto (Finanzas empresa)")
+            if lines_f.empty:
+                st.info("Aún no hay ventas para mostrar.")
+            else:
+                total_profit = float(pd.to_numeric(lines_f["_Ganancia_Neta_Linea"], errors="coerce").fillna(0.0).sum())
+                p = lines_f.groupby("Producto", as_index=False).agg(
+                    Unidades=("Cantidad", "sum"),
+                    Ingreso=("Subtotal_Linea", "sum"),
+                    Neto=("_Monto_Asignado", "sum"),
+                    COGS=("COGS_Linea", "sum"),
+                    Ganancia=("_Ganancia_Neta_Linea", "sum"),
+                )
+    
+                # arreglar columnas por nombre raro si aplica
+                if "Neto" not in p.columns:
+                    p["Neto"] = lines_f.groupby("Producto")["_Monto_Asignado"].sum().values
+                if "Ganancia" not in p.columns:
+                    p["Ganancia"] = lines_f.groupby("Producto")["_Ganancia_Neta_Linea"].sum().values
+    
+                p["Ingreso"] = pd.to_numeric(p["Ingreso"], errors="coerce").fillna(0.0)
+                p["Neto"] = pd.to_numeric(p["Neto"], errors="coerce").fillna(0.0)
+                p["COGS"] = pd.to_numeric(p["COGS"], errors="coerce").fillna(0.0)
+                p["Ganancia"] = pd.to_numeric(p["Ganancia"], errors="coerce").fillna(0.0)
+                p["Margen_%"] = p.apply(lambda r: (r["Ganancia"] / r["Ingreso"] * 100) if r["Ingreso"] > 0 else 0.0, axis=1)
+                p["Precio_Prom"] = p.apply(lambda r: (r["Ingreso"] / r["Unidades"]) if r["Unidades"] > 0 else 0.0, axis=1)
+                p["Costo_Prom"] = p.apply(lambda r: (r["COGS"] / r["Unidades"]) if r["Unidades"] > 0 else 0.0, axis=1)
+                p["Ganancia_U"] = p.apply(lambda r: (r["Ganancia"] / r["Unidades"]) if r["Unidades"] > 0 else 0.0, axis=1)
+                p = p.sort_values("Ganancia", ascending=False)
+    
+                for _, r in p.iterrows():
+                    prod = str(r["Producto"])
+                    with st.expander(f"{prod}", expanded=False):
+                        cols = st.columns(3)
+                        cols[0].markdown(f"**Unidades:** {int(r['Unidades'])}")
+                        cols[1].markdown(f"**Ingreso:** {money(float(r['Ingreso']))}")
+                        cols[2].markdown(f"**Neto recibido:** {money(float(r['Neto']))}")
+    
+                        cols2 = st.columns(3)
+                        cols2[0].markdown(f"**COGS:** {money(float(r['COGS']))}")
+                        cols2[1].markdown(f"**Ganancia neta:** {money(float(r['Ganancia']))}")
+                        cols2[2].markdown(f"**Margen:** {float(r['Margen_%']):.1f}%")
+    
+                        cols3 = st.columns(3)
+                        cols3[0].markdown(f"**Precio prom.:** {money(float(r['Precio_Prom']))}")
+                        cols3[1].markdown(f"**Costo prom.:** {money(float(r['Costo_Prom']))}")
+                        cols3[2].markdown(f"**Ganancia/unidad:** {money(float(r['Ganancia_U']))}")
+    
+                        contrib = (float(r["Ganancia"]) / total_profit * 100) if total_profit != 0 else 0.0
+                        st.caption(f"Contribución a la ganancia total: {contrib:.1f}%")
 # -----------------------------
 # TAB: Ventas (Carrito)
 # -----------------------------
