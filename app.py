@@ -2612,10 +2612,10 @@ with st.container():
                 _scheletro_set_page(target)
             st.markdown(wrapper_close, unsafe_allow_html=True)
 
-    _nav_btn(c1, "Home", "Home")
-    _nav_btn(c2, "Stock", "Stock")
-    _nav_btn(c3, "Ventas","Ventas")
-    _nav_btn(c4, "Finanzas", "Finanzas")
+    _nav_btn(c1, "Dashboard", "📊", "Dashboard")
+    _nav_btn(c2, "Inventario", "📦", "Inventario")
+    _nav_btn(c3, "Ventas", "🛒", "Ventas")
+    _nav_btn(c4, "Finanzas", "📈", "Finanzas")
 
     st.markdown('</div>', unsafe_allow_html=True)
 # --------------------------------------------------------------------------------
