@@ -2608,7 +2608,7 @@ with st.container():
         with col:
             st.markdown(wrapper_open, unsafe_allow_html=True)
             # Botón (no cambia URL, no abre pestaña)
-            if st.button(f"{ico}\n{label}", key=f"nav_{target}", use_container_width=True):
+            if st.button(f"{ico}", key=f"nav_{target}", use_container_width=True):
                 _scheletro_set_page(target)
             st.markdown(wrapper_close, unsafe_allow_html=True)
 
