@@ -194,7 +194,6 @@ def load_raw_sheet(conn: GSheetsConnection, worksheet: str, ttl_s: int = 45) -> 
     return _cached_read_600(worksheet).copy()
 
 
-
 def save_sheet(conn: GSheetsConnection, worksheet: str, df: pd.DataFrame) -> None:
     """Escribe un DataFrame a Google Sheets. (ÚNICO punto de escritura)"""
     try:
@@ -213,6 +212,7 @@ def save_sheet(conn: GSheetsConnection, worksheet: str, df: pd.DataFrame) -> Non
         st.cache_data.clear()
     except Exception:
         pass
+
 
 def load_config(conn: GSheetsConnection, ttl_s: int = 120) -> dict[str, Any]:
     df = load_raw_sheet(conn, SHEET_CONFIG, ttl_s=ttl_s)
@@ -244,16 +244,6 @@ def load_inventario(conn: GSheetsConnection, ttl_s: int = 45) -> pd.DataFrame:
     return df
 
 
-# -----------------------------
-# Catálogos (Drops / Colores) + generación de SKU
-
-SHEET_CATALOGOS = "Catalogos"
-
-# -----------------------------
-# Egresos
-SHEET_EGRESOS = "Egresos"
-EG_REQUIRED = ["Egreso_ID", "Fecha", "Concepto", "Categoria", "Monto", "Notas", "Drop"]
-
 def load_egresos(conn: GSheetsConnection, ttl_s: int = 60) -> pd.DataFrame:
     df = load_raw_sheet(conn, SHEET_EGRESOS, ttl_s=ttl_s)
     if df.empty:
@@ -264,6 +254,7 @@ def load_egresos(conn: GSheetsConnection, ttl_s: int = 60) -> pd.DataFrame:
     for c in ["Egreso_ID", "Fecha", "Concepto", "Categoria", "Notas", "Drop"]:
         df[c] = df[c].astype(str).fillna("").str.strip()
     return df
+
 
 def _next_egreso_id(eg_df: pd.DataFrame) -> str:
     year = datetime.now().year
@@ -283,6 +274,7 @@ def _next_egreso_id(eg_df: pd.DataFrame) -> str:
     n = (max(nums) + 1) if nums else 1
     return f"{prefix}{n:04d}"
 
+
 def load_categorias(conn: GSheetsConnection, ttl_s: int = 300) -> pd.DataFrame:
     """Lee la hoja Categorias (listado maestro de categorías de egresos)."""
     df = load_raw_sheet(conn, SHEET_CATEGORIAS, ttl_s=ttl_s)
@@ -292,12 +284,14 @@ def load_categorias(conn: GSheetsConnection, ttl_s: int = 300) -> pd.DataFrame:
     df["Categoria"] = df["Categoria"].astype(str).str.strip()
     return df
 
+
 def load_catalogos(conn: GSheetsConnection, ttl_s: int = 600) -> pd.DataFrame:
     """Lee hoja Catalogos (Drops, Colores, etc.) con cache."""
     df = load_raw_sheet(conn, SHEET_CATALOGOS, ttl_s=ttl_s)
     # Normaliza encabezados por si vienen con espacios
     df.columns = [str(c).strip() for c in df.columns]
     return df
+
 
 def parse_catalogos(df: pd.DataFrame) -> dict[str, list[dict[str, str]]]:
     """Devuelve dict con listas: drops[{valor,codigo}], colores[{valor,codigo}]."""
@@ -333,17 +327,20 @@ def parse_catalogos(df: pd.DataFrame) -> dict[str, list[dict[str, str]]]:
 
     return {"drops": _pick("DROP"), "colores": _pick("COLOR")}
 
+
 def _strip_accents(s: str) -> str:
     s = str(s or "")
     return "".join(
         ch for ch in unicodedata.normalize("NFKD", s) if not unicodedata.combining(ch)
     )
 
+
 def _slug_upper(s: str) -> str:
     s = _strip_accents(s).upper().strip()
     s = re.sub(r"[^A-Z0-9\s\-]", " ", s)
     s = re.sub(r"\s+", " ", s).strip()
     return s
+
 
 def suggest_product_code(product_name: str) -> str:
     """Sugiere un código de 3 letras tipo PSY / BSC."""
@@ -370,8 +367,10 @@ def suggest_product_code(product_name: str) -> str:
     code = (code + "XXX")[:3]
     return code
 
+
 def build_sku(drop_code: str, prod_code: str, color_code: str, size_code: str) -> str:
     return f"{drop_code}-{prod_code}-{color_code}-{size_code}".upper()
+
 
 def get_existing_product_code(inv_df: pd.DataFrame, product_name: str) -> str | None:
     """Si el producto ya existe, intenta respetar su código (2do segmento del SKU)."""
@@ -390,15 +389,16 @@ def get_existing_product_code(inv_df: pd.DataFrame, product_name: str) -> str | 
         return None
     return prod_codes.value_counts().index[0]
 
+
 def ensure_unique_skus(new_skus: list[str], existing: set[str]) -> tuple[bool, list[str]]:
     dups = [s for s in new_skus if s in existing]
     return (len(dups) == 0, dups)
+
 
 def size_sort_key(s: str) -> int:
     order = ["XS", "S", "M", "L", "XL", "XXL", "XXXL", "OS"]
     s = str(s or "").upper().strip()
     return order.index(s) if s in order else 999
-
 
 
 def load_cabecera(conn: GSheetsConnection, ttl_s: int = 60) -> pd.DataFrame:
@@ -435,6 +435,7 @@ def load_detalle(conn: GSheetsConnection, ttl_s: int = 60) -> pd.DataFrame:
         df[c] = df[c].astype(str).fillna("").str.strip()
     return df
 
+
 def load_inversiones(conn: GSheetsConnection, ttl_s: int = 180) -> pd.DataFrame:
     df = load_raw_sheet(conn, SHEET_INVERSIONES, ttl_s=ttl_s)
     if df.empty:
@@ -447,6 +448,7 @@ def load_inversiones(conn: GSheetsConnection, ttl_s: int = 180) -> pd.DataFrame:
 
     df["Tipo"] = df["Tipo"].str.upper()
     return df
+
 
 # -----------------------------
 # Venta_ID secuencial (V-YYYY-0001)
@@ -481,5 +483,3 @@ def comision_porcentaje(metodo_pago: str, cfg: dict[str, Any], override_pce: flo
     if m == "contra entrega":
         return float(override_pce) if override_pce is not None else float(pce)
     return 0.0
-
-
