@@ -30,7 +30,7 @@ def inject_css() -> None:
         <style>
           .block-container {
               padding-top: 0.6rem;
-              padding-bottom: 92px;
+              padding-bottom: 118px;
               max-width: 100%;
           }
           #MainMenu {visibility: hidden;}
@@ -78,20 +78,72 @@ def inject_css() -> None:
             margin: 0 0 10px 0;
           }
 
+          /* Marcadores para los botones de modo (Ventas/Egresos) y bodega */
           .mode-tab-marker,
           .mode-tab-active,
           .bodega-tab-marker,
-          .bodega-tab-active {
+          .bodega-tab-active,
+          .scheletro-nav-state {
             display: none;
           }
 
+          /* =========================================================
+             REGLAS RESPONSIVAS PARA BOTONES EN FILA (2 o 3 columnas)
+             ========================================================= */
+          
+          div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > .mode-tab-marker,
+                                                   > div[data-testid="stColumn"] > .mode-tab-active,
+                                                   > div[data-testid="stColumn"] > .bodega-tab-marker,
+                                                   > div[data-testid="stColumn"] > .bodega-tab-active,
+                                                   > div[data-testid="stColumn"] > .scheletro-nav-state) {
+              flex-wrap: nowrap !important;
+          }
+
+          div[data-testid="stColumn"]:has(.mode-tab-marker),
+          div[data-testid="stColumn"]:has(.mode-tab-active),
+          div[data-testid="stColumn"]:has(.bodega-tab-marker),
+          div[data-testid="stColumn"]:has(.bodega-tab-active),
+          div[data-testid="stColumn"]:has(.scheletro-nav-state) {
+              flex: 1 1 0% !important;
+              min-width: 0 !important;
+          }
+
+          div[data-testid="stColumn"]:has(.mode-tab-marker) div[data-testid="stButton"] > button,
+          div[data-testid="stColumn"]:has(.mode-tab-active) div[data-testid="stButton"] > button,
+          div[data-testid="stColumn"]:has(.bodega-tab-marker) div[data-testid="stButton"] > button,
+          div[data-testid="stColumn"]:has(.bodega-tab-active) div[data-testid="stButton"] > button,
+          div[data-testid="stColumn"]:has(.scheletro-nav-state) div[data-testid="stButton"] > button {
+              white-space: normal !important;
+              word-break: break-word !important;
+              width: 100% !important;
+          }
+
+          @media (max-width: 480px) {
+              div[data-testid="stColumn"]:has(.mode-tab-marker) div[data-testid="stButton"] > button,
+              div[data-testid="stColumn"]:has(.mode-tab-active) div[data-testid="stButton"] > button,
+              div[data-testid="stColumn"]:has(.bodega-tab-marker) div[data-testid="stButton"] > button,
+              div[data-testid="stColumn"]:has(.bodega-tab-active) div[data-testid="stButton"] > button {
+                  font-size: 0.85rem !important;
+                  padding: 8px 4px !important;
+              }
+              div[data-testid="stColumn"]:has(.scheletro-nav-state) div[data-testid="stButton"] > button {
+                  font-size: 0.7rem !important;
+                  padding: 6px 2px !important;
+              }
+          }
+
+          /* =========================================================
+             ESTILOS VISIBLES PARA BOTONES (sin necesidad de hover)
+             ========================================================= */
+
+          /* Botones de modo (Ventas/Egresos) */
           div[data-testid="column"]:has(.mode-tab-marker) div[data-testid="stButton"] > button,
           div[data-testid="column"]:has(.mode-tab-active) div[data-testid="stButton"] > button {
             min-height: 66px !important;
             border-radius: 20px !important;
-            border: 1px solid rgba(255,255,255,0.06) !important;
-            background: rgba(255,255,255,0.03) !important;
-            color: rgba(255,255,255,0.70) !important;
+            border: 1px solid rgba(255,255,255,0.15) !important;
+            background: rgba(255,255,255,0.08) !important;  /* Más visible */
+            color: rgba(255,255,255,0.90) !important;      /* Texto más claro */
             font-size: 1rem !important;
             font-weight: 700 !important;
             box-shadow: none !important;
@@ -99,24 +151,25 @@ def inject_css() -> None:
 
           div[data-testid="column"]:has(.mode-tab-marker) div[data-testid="stButton"] > button:hover,
           div[data-testid="column"]:has(.mode-tab-active) div[data-testid="stButton"] > button:hover {
-            border-color: rgba(255,255,255,0.10) !important;
-            background: rgba(255,255,255,0.05) !important;
-            color: rgba(255,255,255,0.92) !important;
+            border-color: rgba(255,255,255,0.25) !important;
+            background: rgba(255,255,255,0.12) !important;
+            color: rgba(255,255,255,1) !important;
           }
 
           div[data-testid="column"]:has(.mode-tab-active) div[data-testid="stButton"] > button {
-            background: rgba(255,255,255,0.10) !important;
-            color: rgba(255,255,255,0.98) !important;
-            border-color: rgba(255,255,255,0.10) !important;
+            background: rgba(255,255,255,0.15) !important;
+            border-color: rgba(255,255,255,0.25) !important;
+            color: white !important;
           }
 
+          /* Botones de bodega (Casa/Bodega) */
           div[data-testid="column"]:has(.bodega-tab-marker) div[data-testid="stButton"] > button,
           div[data-testid="column"]:has(.bodega-tab-active) div[data-testid="stButton"] > button {
             min-height: 62px !important;
             border-radius: 18px !important;
-            border: 1px solid rgba(255,255,255,0.10) !important;
-            background: rgba(255,255,255,0.04) !important;
-            color: rgba(255,255,255,0.70) !important;
+            border: 1px solid rgba(255,255,255,0.15) !important;
+            background: rgba(255,255,255,0.08) !important;
+            color: rgba(255,255,255,0.90) !important;
             font-size: 1rem !important;
             font-weight: 700 !important;
             box-shadow: none !important;
@@ -124,18 +177,19 @@ def inject_css() -> None:
 
           div[data-testid="column"]:has(.bodega-tab-marker) div[data-testid="stButton"] > button:hover,
           div[data-testid="column"]:has(.bodega-tab-active) div[data-testid="stButton"] > button:hover {
-            border-color: rgba(255,255,255,0.14) !important;
-            background: rgba(255,255,255,0.06) !important;
-            color: rgba(255,255,255,0.92) !important;
+            border-color: rgba(255,255,255,0.25) !important;
+            background: rgba(255,255,255,0.12) !important;
+            color: white !important;
           }
 
           div[data-testid="column"]:has(.bodega-tab-active) div[data-testid="stButton"] > button {
-            border-color: rgba(34,197,94,0.55) !important;
-            background: rgba(34,197,94,0.16) !important;
+            border-color: rgba(34,197,94,0.7) !important;
+            background: rgba(34,197,94,0.2) !important;
             color: #38d46a !important;
-            box-shadow: inset 0 0 0 1px rgba(34,197,94,0.12) !important;
+            box-shadow: inset 0 0 0 1px rgba(34,197,94,0.2) !important;
           }
 
+          /* Resto de estilos existentes (sin cambios importantes) */
           .sche-section-title {
             font-size: 1.08rem;
             font-weight: 700;
@@ -241,66 +295,80 @@ def inject_css() -> None:
 
           input, textarea { font-size: 16px !important; }
 
-          .scheletro-bottom-nav {
-              position: fixed;
-              bottom: 0;
-              left: 0;
-              right: 0;
-              z-index: 9999;
-              width: 100%;
-              max-width: 720px;
-              margin: 0 auto 14px auto;
-              border-radius: 22px;
-              background: rgba(16,16,16,0.92);
-              border: 1px solid rgba(255,255,255,0.08);
-              box-shadow: 0 10px 34px rgba(0,0,0,0.55);
-              padding: 10px 10px 8px 10px;
-              backdrop-filter: blur(10px);
-          }
-          .scheletro-bottom-nav div[data-testid="stButton"] > button {
-              width: 100%;
-              border: 0 !important;
-              background: transparent !important;
-              color: rgba(255,255,255,0.70) !important;
-              padding: 10px 6px !important;
-              border-radius: 16px !important;
-              font-weight: 600 !important;
-              line-height: 1.05 !important;
-          }
-          .scheletro-bottom-nav div[data-testid="stButton"] > button:hover {
-              background: rgba(255,255,255,0.06) !important;
-              color: rgba(255,255,255,0.92) !important;
-          }
-          .scheletro-bottom-nav div[data-testid="stButton"] > button:focus {
-              outline: none !important;
-              box-shadow: 0 0 0 2px rgba(34,197,94,0.30) !important;
-          }
-          .scheletro-bottom-nav .is-active button {
-              color: rgba(34,197,94,1) !important;
-          }
-          .scheletro-bottom-nav .is-active button:hover {
-              background: rgba(34,197,94,0.10) !important;
+          .scheletro-bottom-nav-marker {
+              display: none;
           }
 
-          /* ── FIX MÓVIL: forzar botones del nav siempre en fila ── */
-          div[data-testid="stVerticalBlock"]:has(.scheletro-bottom-nav-marker)
-            div[data-testid="stHorizontalBlock"] {
-              flex-direction: row !important;
-              flex-wrap: nowrap !important;
-              gap: 4px !important;
+          div[data-testid="stVerticalBlock"]:has(.scheletro-bottom-nav-marker) {
+              position: sticky !important;
+              bottom: max(10px, env(safe-area-inset-bottom)) !important;
+              z-index: 900 !important;
+              margin-top: 18px !important;
+              padding: 0 !important;
+              background: transparent !important;
+              border: 0 !important;
+              box-shadow: none !important;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.scheletro-bottom-nav-marker) > div[data-testid="stHorizontalBlock"] {
+              background: rgba(10,10,10,0.92);
+              border: 1px solid rgba(255,255,255,0.08);
+              border-radius: 22px;
+              padding: 10px;
+              backdrop-filter: blur(10px);
+              box-shadow: 0 10px 34px rgba(0,0,0,0.45);
+              gap: 6px !important;
               align-items: stretch !important;
           }
-          div[data-testid="stVerticalBlock"]:has(.scheletro-bottom-nav-marker)
-            div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
-              flex: 1 1 0 !important;
+
+          div[data-testid="stVerticalBlock"]:has(.scheletro-bottom-nav-marker) > div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
               min-width: 0 !important;
-              width: auto !important;
           }
-          /* Reducir padding interior en botones del nav en pantallas pequeñas */
+
+          /* Botones de la barra inferior (ahora visibles sin hover) */
+          div[data-testid="stVerticalBlock"]:has(.scheletro-bottom-nav-marker)
+            div[data-testid="stButton"] > button {
+              width: 100%;
+              min-height: 58px !important;
+              border-radius: 16px !important;
+              border: 1px solid rgba(255,255,255,0.15) !important;
+              background: rgba(255,255,255,0.07) !important;
+              color: rgba(255,255,255,0.85) !important;
+              padding: 8px 2px !important;
+              font-size: 0.78rem !important;
+              font-weight: 700 !important;
+              line-height: 1.05 !important;
+              white-space: pre-line !important;
+              box-shadow: none !important;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.scheletro-bottom-nav-marker)
+            div[data-testid="stButton"] > button:hover {
+              background: rgba(255,255,255,0.12) !important;
+              color: white !important;
+              border-color: rgba(255,255,255,0.25) !important;
+          }
+
+          div[data-testid="column"]:has(.scheletro-nav-state.active)
+            div[data-testid="stButton"] > button {
+              background: rgba(34,197,94,0.18) !important;
+              border-color: rgba(34,197,94,0.5) !important;
+              color: #38d46a !important;
+          }
+
+          div[data-testid="column"]:has(.scheletro-nav-state.active)
+            div[data-testid="stButton"] > button:hover {
+              background: rgba(34,197,94,0.25) !important;
+          }
+
           @media (max-width: 480px) {
-              .scheletro-bottom-nav div[data-testid="stButton"] > button {
-                  padding: 8px 2px !important;
-                  font-size: 0.78rem !important;
+              .block-container {
+                  padding-bottom: 118px;
+              }
+              div[data-testid="stVerticalBlock"]:has(.scheletro-bottom-nav-marker)
+                div[data-testid="stButton"] > button {
+                  min-height: 54px !important;
+                  font-size: 0.74rem !important;
               }
           }
         </style>

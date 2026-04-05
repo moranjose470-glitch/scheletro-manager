@@ -107,7 +107,7 @@ elif page == "Inventario":
 # TAB: Finanzas (Nivel 1 · 2 · 3)
 # -----------------------------
 elif page == "Finanzas":
-    render_finanzas_page(conn, inv_df_full, APP_TZ, money)
+    render_finanzas_page(conn, inv_df_full, APP_TZ)
 
 # -----------------------------
 # TAB: Ventas (Carrito)
