@@ -85,6 +85,8 @@ def inject_css() -> None:
           .bodega-tab-active,
           .inv-tab-marker,
           .inv-tab-active,
+          .transfer-route-marker,
+          .transfer-route-active,
           .scheletro-nav-state {
             display: none;
           }
@@ -98,6 +100,8 @@ def inject_css() -> None:
                                                    > div[data-testid="stColumn"] > .bodega-tab-active,
                                                    > div[data-testid="stColumn"] > .inv-tab-marker,
                                                    > div[data-testid="stColumn"] > .inv-tab-active,
+                                                   > div[data-testid="stColumn"] > .transfer-route-marker,
+                                                   > div[data-testid="stColumn"] > .transfer-route-active,
                                                    > div[data-testid="stColumn"] > .scheletro-nav-state) {
               flex-wrap: nowrap !important;
           }
@@ -108,6 +112,8 @@ def inject_css() -> None:
           div[data-testid="stColumn"]:has(.bodega-tab-active),
           div[data-testid="stColumn"]:has(.inv-tab-marker),
           div[data-testid="stColumn"]:has(.inv-tab-active),
+          div[data-testid="stColumn"]:has(.transfer-route-marker),
+          div[data-testid="stColumn"]:has(.transfer-route-active),
           div[data-testid="stColumn"]:has(.scheletro-nav-state) {
               flex: 1 1 0% !important;
               min-width: 0 !important;
@@ -119,6 +125,8 @@ def inject_css() -> None:
           div[data-testid="stColumn"]:has(.bodega-tab-active) div[data-testid="stButton"] > button,
           div[data-testid="stColumn"]:has(.inv-tab-marker) div[data-testid="stButton"] > button,
           div[data-testid="stColumn"]:has(.inv-tab-active) div[data-testid="stButton"] > button,
+          div[data-testid="stColumn"]:has(.transfer-route-marker) div[data-testid="stButton"] > button,
+          div[data-testid="stColumn"]:has(.transfer-route-active) div[data-testid="stButton"] > button,
           div[data-testid="stColumn"]:has(.scheletro-nav-state) div[data-testid="stButton"] > button {
               white-space: normal !important;
               word-break: break-word !important;
@@ -126,6 +134,8 @@ def inject_css() -> None:
           }
 
           @media (max-width: 480px) {
+              div[data-testid="stColumn"]:has(.transfer-route-marker) div[data-testid="stButton"] > button,
+              div[data-testid="stColumn"]:has(.transfer-route-active) div[data-testid="stButton"] > button,
               div[data-testid="stColumn"]:has(.mode-tab-marker) div[data-testid="stButton"] > button,
               div[data-testid="stColumn"]:has(.mode-tab-active) div[data-testid="stButton"] > button,
               div[data-testid="stColumn"]:has(.bodega-tab-marker) div[data-testid="stButton"] > button,
@@ -223,7 +233,37 @@ def inject_css() -> None:
             font-weight: 700 !important;
             box-shadow: none !important;
           }
+                    /* Botones de ruta de transferencia */
+          div[data-testid="column"]:has(.transfer-route-marker) div[data-testid="stButton"] > button,
+          div[data-testid="column"]:has(.transfer-route-active) div[data-testid="stButton"] > button,
+          div[data-testid="stColumn"]:has(.transfer-route-marker) div[data-testid="stButton"] > button,
+          div[data-testid="stColumn"]:has(.transfer-route-active) div[data-testid="stButton"] > button {
+            min-height: 66px !important;
+            border-radius: 20px !important;
+            border: 1px solid rgba(255,255,255,0.15) !important;
+            background: rgba(255,255,255,0.08) !important;
+            color: rgba(255,255,255,0.90) !important;
+            font-size: 1rem !important;
+            font-weight: 700 !important;
+            box-shadow: none !important;
+          }
 
+          div[data-testid="column"]:has(.transfer-route-marker) div[data-testid="stButton"] > button:hover,
+          div[data-testid="column"]:has(.transfer-route-active) div[data-testid="stButton"] > button:hover,
+          div[data-testid="stColumn"]:has(.transfer-route-marker) div[data-testid="stButton"] > button:hover,
+          div[data-testid="stColumn"]:has(.transfer-route-active) div[data-testid="stButton"] > button:hover {
+            border-color: rgba(255,255,255,0.25) !important;
+            background: rgba(255,255,255,0.12) !important;
+            color: white !important;
+          }
+
+          div[data-testid="column"]:has(.transfer-route-active) div[data-testid="stButton"] > button,
+          div[data-testid="stColumn"]:has(.transfer-route-active) div[data-testid="stButton"] > button {
+            border-color: rgba(34,197,94,0.7) !important;
+            background: rgba(34,197,94,0.20) !important;
+            color: #38d46a !important;
+            box-shadow: inset 0 0 0 1px rgba(34,197,94,0.2) !important;
+          }
           div[data-testid="column"]:has(.inv-tab-marker) div[data-testid="stButton"] > button:hover,
           div[data-testid="column"]:has(.inv-tab-active) div[data-testid="stButton"] > button:hover,
           div[data-testid="stColumn"]:has(.inv-tab-marker) div[data-testid="stButton"] > button:hover,

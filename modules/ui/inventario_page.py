@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from datetime import datetime
 import re
 
@@ -352,9 +350,9 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
     if "Activo" in inv_df.columns:
         inv_df = inv_df[inv_df["Activo"].fillna(True) == True].copy()
 
-    cat_df       = load_catalogos(conn, ttl_s=600)
-    cat          = parse_catalogos(cat_df)
-    colores_cat  = cat.get("colores", [])
+    cat_df = load_catalogos(conn, ttl_s=600)
+    cat = parse_catalogos(cat_df)
+    colores_cat = cat.get("colores", [])
     color_to_code = {c["valor"]: c["codigo"] for c in colores_cat}
     color_to_code.setdefault("Standard", "STD")
     color_to_code.setdefault("STANDARD", "STD")
@@ -379,12 +377,10 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
                 p_df = inv_df[inv_df["Producto"] == producto].copy()
 
                 casa_total = int(p_df.get("Stock_Casa", 0).fillna(0).sum())
-                bod_total  = int(p_df.get("Stock_Bodega", 0).fillna(0).sum())
-                total      = casa_total + bod_total
+                bod_total = int(p_df.get("Stock_Bodega", 0).fillna(0).sum())
+                total = casa_total + bod_total
 
                 with st.expander(f"**{producto}** — Stock Total: {total}", expanded=False):
-
-                    # Totales por bodega
                     st.markdown(
                         f'<div class="inv-bodega-row">'
                         f'<div class="inv-bodega-item"><span class="inv-bodega-label">{bodega1_nombre}:</span><span class="inv-bodega-val">{casa_total}</span></div>'
@@ -393,7 +389,6 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
                         unsafe_allow_html=True,
                     )
 
-                    # Colores
                     colors = (
                         p_df.get("Color", pd.Series([], dtype=str))
                         .fillna("Standard").astype(str).str.strip().unique().tolist()
@@ -416,7 +411,6 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
                             p_df["Color"].fillna("Standard").astype(str).str.strip() == selected_color
                         ].copy()
 
-                    # Tallas
                     sizes = (
                         show_df.get("Talla", pd.Series([], dtype=str))
                         .fillna("OS").astype(str).str.strip().unique().tolist()
@@ -428,9 +422,9 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
 
                     if not has_sizes:
                         casa = int(show_df.get("Stock_Casa", 0).fillna(0).sum())
-                        bod  = int(show_df.get("Stock_Bodega", 0).fillna(0).sum())
-                        mx   = max(casa, bod, 1)
-                        st.markdown(f'<div class="inv-talla-title">Talla OS</div>', unsafe_allow_html=True)
+                        bod = int(show_df.get("Stock_Bodega", 0).fillna(0).sum())
+                        mx = max(casa, bod, 1)
+                        st.markdown('<div class="inv-talla-title">Talla OS</div>', unsafe_allow_html=True)
                         c1, c2 = st.columns(2)
                         with c1:
                             pct = int((casa / mx) * 100)
@@ -453,8 +447,8 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
                                 show_df["Talla"].fillna("OS").astype(str).str.strip().str.upper() == str(talla).upper()
                             ]
                             casa = int(row.get("Stock_Casa", 0).fillna(0).sum())
-                            bod  = int(row.get("Stock_Bodega", 0).fillna(0).sum())
-                            mx   = max(casa, bod, 1)
+                            bod = int(row.get("Stock_Bodega", 0).fillna(0).sum())
+                            mx = max(casa, bod, 1)
 
                             st.markdown(f'<div class="inv-talla-title">Talla {talla}</div>', unsafe_allow_html=True)
                             c1, c2 = st.columns(2)
@@ -495,16 +489,14 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
                 + inv_latest["Talla"].fillna("OS").astype(str)
             )
 
-            # SKU selector
             st.markdown('<span class="inv-tr-label">Producto Seleccionado (SKU)</span>', unsafe_allow_html=True)
             sku_options = inv_latest["__label"].tolist()
-            label_sel   = st.selectbox("SKU", sku_options, key="transfer_sku_label", label_visibility="collapsed")
+            label_sel = st.selectbox("SKU", sku_options, key="transfer_sku_label", label_visibility="collapsed")
 
-            sel_row   = inv_latest[inv_latest["__label"] == label_sel].iloc[0]
-            sku       = str(sel_row["SKU"])
+            sel_row = inv_latest[inv_latest["__label"] == label_sel].iloc[0]
+            sku = str(sel_row["SKU"])
             sku_label = str(sel_row["__label"])
 
-            # SKU info box
             st.markdown(
                 f'<div class="inv-tr-sku-box">'
                 f'<div class="inv-tr-sku-name">{sku_label}</div>'
@@ -514,9 +506,8 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
             )
 
             casa_stock = int(sel_row.get("Stock_Casa", 0) or 0)
-            bod_stock  = int(sel_row.get("Stock_Bodega", 0) or 0)
+            bod_stock = int(sel_row.get("Stock_Bodega", 0) or 0)
 
-            # Dirección
             if "transfer_dir" not in st.session_state:
                 st.session_state.transfer_dir = f"{fmt_bodega('Casa')} ➜ {fmt_bodega('Bodega')}"
 
@@ -525,12 +516,11 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
             direction = st.session_state.transfer_dir
 
             is_casa_to_bod = direction == dir_opt1
-            orig_name  = bodega1_nombre if is_casa_to_bod else bodega2_nombre
-            dest_name  = bodega2_nombre if is_casa_to_bod else bodega1_nombre
-            orig_stock = casa_stock     if is_casa_to_bod else bod_stock
-            dest_stock = bod_stock      if is_casa_to_bod else casa_stock
+            orig_name = bodega1_nombre if is_casa_to_bod else bodega2_nombre
+            dest_name = bodega2_nombre if is_casa_to_bod else bodega1_nombre
+            orig_stock = casa_stock if is_casa_to_bod else bod_stock
+            dest_stock = bod_stock if is_casa_to_bod else casa_stock
 
-            # Stock tiles
             st.markdown(
                 f'<div class="inv-tr-stock-grid">'
                 f'<div class="inv-tr-stock-tile">'
@@ -551,29 +541,48 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
                 unsafe_allow_html=True,
             )
 
-            # Botones de dirección
             st.markdown('<span class="inv-tr-label">Ruta de Transferencia</span>', unsafe_allow_html=True)
             d1, d2 = st.columns(2)
+
             with d1:
-                if st.button(f"{bodega1_nombre} → {bodega2_nombre}", use_container_width=True,
-                             key="dir_btn_1",
-                             type="primary" if is_casa_to_bod else "secondary"):
+                st.markdown(
+                    '<div class="transfer-route-active"></div>' if is_casa_to_bod
+                    else '<div class="transfer-route-marker"></div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button(
+                    f"{bodega1_nombre} → {bodega2_nombre}",
+                    use_container_width=True,
+                    key="dir_btn_1",
+                ):
                     st.session_state.transfer_dir = dir_opt1
                     st.rerun()
+
             with d2:
-                if st.button(f"{bodega2_nombre} → {bodega1_nombre}", use_container_width=True,
-                             key="dir_btn_2",
-                             type="primary" if not is_casa_to_bod else "secondary"):
+                st.markdown(
+                    '<div class="transfer-route-active"></div>' if not is_casa_to_bod
+                    else '<div class="transfer-route-marker"></div>',
+                    unsafe_allow_html=True,
+                )
+                if st.button(
+                    f"{bodega2_nombre} → {bodega1_nombre}",
+                    use_container_width=True,
+                    key="dir_btn_2",
+                ):
                     st.session_state.transfer_dir = dir_opt2
                     st.rerun()
 
-            # Cantidad
             st.markdown('<span class="inv-tr-label" style="margin-top:12px;display:block">Cantidad a Transferir</span>', unsafe_allow_html=True)
-            qty = st.number_input("Cantidad", min_value=1, step=1, value=1,
-                                  key="transfer_qty", label_visibility="collapsed")
+            qty = st.number_input(
+                "Cantidad",
+                min_value=1,
+                step=1,
+                value=1,
+                key="transfer_qty",
+                label_visibility="collapsed",
+            )
             st.caption("El stock se actualizará instantáneamente tras la confirmación.")
 
-            # Validación
             def _can_move() -> tuple[bool, str]:
                 if is_casa_to_bod:
                     if qty > casa_stock:
@@ -587,8 +596,7 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
             if not ok:
                 st.error(msg)
 
-            if st.button("⇄  TRANSFERIR STOCK", use_container_width=True,
-                         disabled=not ok, type="primary"):
+            if st.button("⇄  TRANSFERIR STOCK", use_container_width=True, disabled=not ok, type="primary"):
                 st.cache_data.clear()
                 inv_fresh = load_inventario(conn, ttl_s=45)
                 if "Activo" in inv_fresh.columns:
@@ -601,11 +609,11 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
 
                 i0 = idx[0]
                 if is_casa_to_bod:
-                    inv_fresh.at[i0, "Stock_Casa"]   = int(inv_fresh.at[i0, "Stock_Casa"]   or 0) - int(qty)
+                    inv_fresh.at[i0, "Stock_Casa"] = int(inv_fresh.at[i0, "Stock_Casa"] or 0) - int(qty)
                     inv_fresh.at[i0, "Stock_Bodega"] = int(inv_fresh.at[i0, "Stock_Bodega"] or 0) + int(qty)
                 else:
                     inv_fresh.at[i0, "Stock_Bodega"] = int(inv_fresh.at[i0, "Stock_Bodega"] or 0) - int(qty)
-                    inv_fresh.at[i0, "Stock_Casa"]   = int(inv_fresh.at[i0, "Stock_Casa"]   or 0) + int(qty)
+                    inv_fresh.at[i0, "Stock_Casa"] = int(inv_fresh.at[i0, "Stock_Casa"] or 0) + int(qty)
 
                 save_sheet(conn, SHEET_INVENTARIO, inv_fresh)
                 st.success("✅ Transferencia realizada.")
@@ -617,9 +625,11 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
     # ══════════════════════════════════════════════════════════════
     elif tab == "ingreso":
         st.markdown('<div class="inv-page-title upper">Ingreso de <b>Producto</b></div>', unsafe_allow_html=True)
-        st.markdown('<div class="inv-page-sub" style="text-transform:uppercase;letter-spacing:0.08em;font-size:0.62rem;">Configuración de nueva entrada</div>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="inv-page-sub" style="text-transform:uppercase;letter-spacing:0.08em;font-size:0.62rem;">Configuración de nueva entrada</div>',
+            unsafe_allow_html=True,
+        )
 
-        # ── Estado interno ──────────────────────────────────────
         def _np_init_state() -> None:
             ss = st.session_state
             ss.setdefault("np_stage", "define")
@@ -652,11 +662,11 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
             _np_clear_stock_keys()
 
         def _np_lock_variants() -> None:
-            tiene_tallas  = bool(st.session_state.get("np_tiene_tallas", True))
+            tiene_tallas = bool(st.session_state.get("np_tiene_tallas", True))
             tiene_colores = bool(st.session_state.get("np_tiene_colores", True))
-            tallas  = st.session_state.get("np_tallas_sel", []) or []
+            tallas = st.session_state.get("np_tallas_sel", []) or []
             colores = st.session_state.get("np_colores_sel", []) or []
-            tallas  = ["OS"] if not tiene_tallas else ([s.strip().upper() for s in tallas if str(s).strip()] or ["S"])
+            tallas = ["OS"] if not tiene_tallas else ([s.strip().upper() for s in tallas if str(s).strip()] or ["S"])
             colores = ["Standard"] if not tiene_colores else ([str(c).strip() for c in colores if str(c).strip()] or ["Standard"])
             st.session_state["np_variants"] = {"colores": colores, "tallas": tallas}
             st.session_state["np_stage"] = "stock"
@@ -664,10 +674,10 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
 
         def _np_reset_all() -> None:
             keys = [
-                "np_stage","np_tiene_tallas","np_tiene_colores","np_nombre",
-                "np_drop_sel","np_add_drop","np_new_drop","np_new_drop_code",
-                "np_costo","np_precio","np_almacen","np_prod_code",
-                "np_allow_stock0","np_colores_sel","np_tallas_sel","np_variants",
+                "np_stage", "np_tiene_tallas", "np_tiene_colores", "np_nombre",
+                "np_drop_sel", "np_add_drop", "np_new_drop", "np_new_drop_code",
+                "np_costo", "np_precio", "np_almacen", "np_prod_code",
+                "np_allow_stock0", "np_colores_sel", "np_tallas_sel", "np_variants",
             ]
             for k in keys:
                 if k in st.session_state:
@@ -677,13 +687,12 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
 
         _np_init_state()
 
-        stage  = str(st.session_state.get("np_stage", "define"))
+        stage = str(st.session_state.get("np_stage", "define"))
         locked = stage == "stock"
 
-        # ── Catálogos ───────────────────────────────────────────
-        drops      = cat.get("drops", [])
+        drops = cat.get("drops", [])
         colores_cat2 = cat.get("colores", [])
-        drop_vals  = [d.get("valor", "") for d in drops if str(d.get("valor", "")).strip()] or ["(sin drops en Catalogos)"]
+        drop_vals = [d.get("valor", "") for d in drops if str(d.get("valor", "")).strip()] or ["(sin drops en Catalogos)"]
         color_vals = [c.get("valor", "") for c in colores_cat2 if str(c.get("valor", "")).strip()] or []
 
         color_to_code2 = {c.get("valor", ""): c.get("codigo", "") for c in colores_cat2}
@@ -696,22 +705,31 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
         if not str(st.session_state.get("np_prod_code", "")).strip() and str(st.session_state.get("np_nombre", "")).strip():
             st.session_state["np_prod_code"] = suggest_product_code(str(st.session_state.get("np_nombre", "")))
 
-        # ── Toggles ─────────────────────────────────────────────
         sw1, sw2 = st.columns(2)
         with sw1:
             st.toggle("Tiene tallas", key="np_tiene_tallas", disabled=locked, on_change=_np_unlock_variants)
         with sw2:
             st.toggle("Tiene variante de color", key="np_tiene_colores", disabled=locked, on_change=_np_unlock_variants)
 
-        # ── Datos base ───────────────────────────────────────────
         st.markdown('<div class="inv-ing-section-title">Nombre del Producto</div>', unsafe_allow_html=True)
-        st.text_input("Nombre", key="np_nombre", disabled=locked,
-                      placeholder="Ej. Oversized Graphic Tee",
-                      on_change=_np_unlock_variants, label_visibility="collapsed")
+        st.text_input(
+            "Nombre",
+            key="np_nombre",
+            disabled=locked,
+            placeholder="Ej. Oversized Graphic Tee",
+            on_change=_np_unlock_variants,
+            label_visibility="collapsed",
+        )
 
         st.markdown('<div class="inv-ing-section-title">Drop</div>', unsafe_allow_html=True)
-        st.selectbox("Drop", options=drop_vals, key="np_drop_sel", disabled=locked,
-                     on_change=_np_unlock_variants, label_visibility="collapsed")
+        st.selectbox(
+            "Drop",
+            options=drop_vals,
+            key="np_drop_sel",
+            disabled=locked,
+            on_change=_np_unlock_variants,
+            label_visibility="collapsed",
+        )
 
         with st.expander("Agregar drop nuevo (opcional)", expanded=False):
             st.checkbox("Agregar drop nuevo", key="np_add_drop", disabled=locked)
@@ -722,34 +740,59 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
         c1, c2 = st.columns(2)
         with c1:
             st.markdown('<div class="inv-ing-section-title">Costo del Producto ($)</div>', unsafe_allow_html=True)
-            st.number_input("Costo", min_value=0.0, step=0.50, format="%.2f",
-                            key="np_costo", disabled=locked, on_change=_np_unlock_variants,
-                            label_visibility="collapsed")
+            st.number_input(
+                "Costo",
+                min_value=0.0,
+                step=0.50,
+                format="%.2f",
+                key="np_costo",
+                disabled=locked,
+                on_change=_np_unlock_variants,
+                label_visibility="collapsed",
+            )
         with c2:
             st.markdown('<div class="inv-ing-section-title">Precio de Venta ($)</div>', unsafe_allow_html=True)
-            st.number_input("Precio", min_value=0.0, step=0.50, format="%.2f",
-                            key="np_precio", disabled=locked, on_change=_np_unlock_variants,
-                            label_visibility="collapsed")
+            st.number_input(
+                "Precio",
+                min_value=0.0,
+                step=0.50,
+                format="%.2f",
+                key="np_precio",
+                disabled=locked,
+                on_change=_np_unlock_variants,
+                label_visibility="collapsed",
+            )
 
         st.markdown('<div class="inv-ing-section-title">Almacén Inicial</div>', unsafe_allow_html=True)
-        st.radio("Almacén", options=["Casa", "Bodega"], horizontal=True, key="np_almacen",
-                 format_func=fmt_bodega, disabled=locked, on_change=_np_unlock_variants,
-                 label_visibility="collapsed")
+        st.radio(
+            "Almacén",
+            options=["Casa", "Bodega"],
+            horizontal=True,
+            key="np_almacen",
+            format_func=fmt_bodega,
+            disabled=locked,
+            on_change=_np_unlock_variants,
+            label_visibility="collapsed",
+        )
 
         st.markdown('<div class="inv-ing-section-title">Código Producto (3 Letras)</div>', unsafe_allow_html=True)
-        st.text_input("Código", key="np_prod_code", disabled=locked,
-                      help="SKU: DROP-PROD-COLOR-TALLA", on_change=_np_unlock_variants,
-                      label_visibility="collapsed")
+        st.text_input(
+            "Código",
+            key="np_prod_code",
+            disabled=locked,
+            help="SKU: DROP-PROD-COLOR-TALLA",
+            on_change=_np_unlock_variants,
+            label_visibility="collapsed",
+        )
 
         st.toggle("Permitir guardar con stock 0", key="np_allow_stock0", disabled=locked)
 
-        # ── Variantes ────────────────────────────────────────────
-        tiene_tallas  = bool(st.session_state.get("np_tiene_tallas", True))
+        tiene_tallas = bool(st.session_state.get("np_tiene_tallas", True))
         tiene_colores = bool(st.session_state.get("np_tiene_colores", True))
 
         if not locked:
             if tiene_tallas:
-                st.multiselect("Tallas", options=["XS","S","M","L","XL","XXL","XXXL","OS"], key="np_tallas_sel")
+                st.multiselect("Tallas", options=["XS", "S", "M", "L", "XL", "XXL", "XXXL", "OS"], key="np_tallas_sel")
             else:
                 st.session_state["np_tallas_sel"] = ["OS"]
 
@@ -772,14 +815,13 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
                     _np_reset_all()
                     st.rerun()
 
-        # ── Stock por variante ────────────────────────────────────
         if locked:
-            v        = st.session_state.get("np_variants", {}) or {}
+            v = st.session_state.get("np_variants", {}) or {}
             v_colors = [str(x) for x in (v.get("colores") or ["Standard"]) if str(x).strip()]
-            v_sizes  = [str(x).upper() for x in (v.get("tallas") or ["OS"]) if str(x).strip()]
+            v_sizes = [str(x).upper() for x in (v.get("tallas") or ["OS"]) if str(x).strip()]
 
             st.markdown(
-                f"**Variantes:** {len(v_colors)} color(es) × {len(v_sizes)} talla(s) = **{len(v_colors)*len(v_sizes)} SKU(s)**"
+                f"**Variantes:** {len(v_colors)} color(es) × {len(v_sizes)} talla(s) = **{len(v_colors) * len(v_sizes)} SKU(s)**"
             )
 
             top_l, top_r = st.columns(2)
@@ -799,7 +841,7 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
 
             def _stk_key(color: str, talla: str) -> str:
                 c = re.sub(r"[^A-Za-z0-9]", "", str(color)).upper()[:12] or "STD"
-                t = re.sub(r"[^A-Za-z0-9]", "", str(talla)).upper()[:6]  or "OS"
+                t = re.sub(r"[^A-Za-z0-9]", "", str(talla)).upper()[:6] or "OS"
                 return f"np_stock_{c}_{t}"
 
             for color in v_colors:
@@ -821,7 +863,6 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
 
             st.caption(f"**Total de unidades:** {int(total_units)}")
 
-            # Validación
             can_save = True
             errors: list[str] = []
             nombre = str(st.session_state.get("np_nombre", "")).strip()
@@ -834,12 +875,10 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
             if errors:
                 st.error("\n".join(errors))
 
-            if st.button("💾 Guardar producto", use_container_width=True,
-                         disabled=not can_save, type="primary"):
+            if st.button("💾 Guardar producto", use_container_width=True, disabled=not can_save, type="primary"):
                 try:
-                    # 1) Drop nuevo opcional
                     if bool(st.session_state.get("np_add_drop", False)) and str(st.session_state.get("np_new_drop", "")).strip():
-                        nd      = str(st.session_state.get("np_new_drop", "")).strip().upper()
+                        nd = str(st.session_state.get("np_new_drop", "")).strip().upper()
                         nd_code = str(st.session_state.get("np_new_drop_code", "")).strip().upper() or nd
                         cat_write = load_catalogos(conn, ttl_s=600).copy()
                         cat_write.columns = [str(c).strip() for c in cat_write.columns]
@@ -850,50 +889,55 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
                             & (cat_write.get("Valor", "").astype(str).str.upper() == nd)
                         )
                         if not already.any():
-                            cat_write = pd.concat([cat_write, pd.DataFrame([{"Catalogo": "DROP", "Valor": nd, "Codigo": nd_code}])], ignore_index=True)
+                            cat_write = pd.concat(
+                                [cat_write, pd.DataFrame([{"Catalogo": "DROP", "Valor": nd, "Codigo": nd_code}])],
+                                ignore_index=True,
+                            )
                             save_sheet(conn, SHEET_CATALOGOS, cat_write)
 
-                    # 2) Códigos
-                    drop_sel  = str(st.session_state.get("np_drop_sel", "")).strip()
-                    drop_code = next((str(d.get("codigo", "")).strip() for d in drops if str(d.get("valor", "")).strip() == drop_sel), None)
+                    drop_sel = str(st.session_state.get("np_drop_sel", "")).strip()
+                    drop_code = next(
+                        (str(d.get("codigo", "")).strip() for d in drops if str(d.get("valor", "")).strip() == drop_sel),
+                        None,
+                    )
                     if not drop_code or str(drop_code).lower() == "nan":
                         drop_code = drop_sel.strip().upper()
 
                     raw_pc = re.sub(r"[^A-Za-z0-9]", "", str(st.session_state.get("np_prod_code", "")).strip()).upper()[:3] or "PRD"
                     prod_code = (raw_pc + "XXX")[:3]
 
-                    costo   = float(st.session_state.get("np_costo",  0.0) or 0.0)
-                    precio  = float(st.session_state.get("np_precio", 0.0) or 0.0)
+                    costo = float(st.session_state.get("np_costo", 0.0) or 0.0)
+                    precio = float(st.session_state.get("np_precio", 0.0) or 0.0)
                     almacen = str(st.session_state.get("np_almacen", "Casa"))
 
                     existing_code = get_existing_product_code(inv_df, nombre)
                     if existing_code:
                         prod_code = str(existing_code).strip().upper()[:3]
 
-                    inv_now      = load_inventario(conn, ttl_s=45).copy()
+                    inv_now = load_inventario(conn, ttl_s=45).copy()
                     existing_skus = set(inv_now["SKU"].astype(str).str.strip().tolist())
 
                     rows = []
                     for col in v_colors:
                         col_label = str(col).strip() if tiene_colores else "Standard"
-                        col_code  = color_to_code2.get(col_label) or color_to_code2.get(col_label.title())
+                        col_code = color_to_code2.get(col_label) or color_to_code2.get(col_label.title())
                         if not col_code:
                             col_code = re.sub(r"\s+", "", col_label).upper()[:3] or "STD"
                         for talla in v_sizes:
                             talla_label = str(talla).strip().upper() if tiene_tallas else "OS"
-                            sku_new     = build_sku(drop_code, prod_code, col_code, talla_label)
-                            qty         = int(stock_map.get((col, talla), 0) or 0)
+                            sku_new = build_sku(drop_code, prod_code, col_code, talla_label)
+                            qty = int(stock_map.get((col, talla), 0) or 0)
                             rows.append({
-                                "SKU":            sku_new,
-                                "Drop":           drop_code,
-                                "Producto":       nombre,
-                                "Color":          col_label,
-                                "Talla":          talla_label,
-                                "Stock_Casa":     qty if almacen == "Casa" else 0,
-                                "Stock_Bodega":   qty if almacen == "Bodega" else 0,
+                                "SKU": sku_new,
+                                "Drop": drop_code,
+                                "Producto": nombre,
+                                "Color": col_label,
+                                "Talla": talla_label,
+                                "Stock_Casa": qty if almacen == "Casa" else 0,
+                                "Stock_Bodega": qty if almacen == "Bodega" else 0,
                                 "Costo_Unitario": float(costo),
-                                "Precio_Lista":   float(precio),
-                                "Activo":         True,
+                                "Precio_Lista": float(precio),
+                                "Activo": True,
                             })
 
                     ok_unique, dups = ensure_unique_skus([r["SKU"] for r in rows], existing_skus)
