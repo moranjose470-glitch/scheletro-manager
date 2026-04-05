@@ -311,37 +311,30 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
         st.session_state.inv_tab = "inventario"
 
     # ── Tab navigation ────────────────────────────────────────────
-    t1, t2, t3 = st.columns(3)
+    with st.container():
+        st.markdown('<div class="inv-tabs-nav-marker"></div>', unsafe_allow_html=True)
+        t1, t2, t3 = st.columns(3)
 
-    with t1:
-        st.markdown(
-            '<div class="inv-tab-active"></div>' if st.session_state.inv_tab == "inventario"
-            else '<div class="inv-tab-marker"></div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("\nINVENTARIO", key="inv_tab_btn_inv", use_container_width=True):
-            st.session_state.inv_tab = "inventario"
-            st.rerun()
+        with t1:
+            cls = "inv-tabs-state active" if st.session_state.inv_tab == "inventario" else "inv-tabs-state"
+            st.markdown(f'<div class="{cls}"></div>', unsafe_allow_html=True)
+            if st.button("\nINVENTARIO", key="inv_tab_btn_inv", use_container_width=True):
+                st.session_state.inv_tab = "inventario"
+                st.rerun()
 
-    with t2:
-        st.markdown(
-            '<div class="inv-tab-active"></div>' if st.session_state.inv_tab == "transferir"
-            else '<div class="inv-tab-marker"></div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("\nTRANSFERIR", key="inv_tab_btn_tr", use_container_width=True):
-            st.session_state.inv_tab = "transferir"
-            st.rerun()
+        with t2:
+            cls = "inv-tabs-state active" if st.session_state.inv_tab == "transferir" else "inv-tabs-state"
+            st.markdown(f'<div class="{cls}"></div>', unsafe_allow_html=True)
+            if st.button("\nTRANSFERIR", key="inv_tab_btn_tr", use_container_width=True):
+                st.session_state.inv_tab = "transferir"
+                st.rerun()
 
-    with t3:
-        st.markdown(
-            '<div class="inv-tab-active"></div>' if st.session_state.inv_tab == "ingreso"
-            else '<div class="inv-tab-marker"></div>',
-            unsafe_allow_html=True,
-        )
-        if st.button("\nINGRESO", key="inv_tab_btn_ing", use_container_width=True):
-            st.session_state.inv_tab = "ingreso"
-            st.rerun()
+        with t3:
+            cls = "inv-tabs-state active" if st.session_state.inv_tab == "ingreso" else "inv-tabs-state"
+            st.markdown(f'<div class="{cls}"></div>', unsafe_allow_html=True)
+            if st.button("\nINGRESO", key="inv_tab_btn_ing", use_container_width=True):
+                st.session_state.inv_tab = "ingreso"
+                st.rerun()
 
     tab = st.session_state.inv_tab
 
@@ -542,35 +535,31 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
             )
 
             st.markdown('<span class="inv-tr-label">Ruta de Transferencia</span>', unsafe_allow_html=True)
-            d1, d2 = st.columns(2)
+            with st.container():
+                st.markdown('<div class="transfer-route-nav-marker"></div>', unsafe_allow_html=True)
+                d1, d2 = st.columns(2)
 
-            with d1:
-                st.markdown(
-                    '<div class="transfer-route-active"></div>' if is_casa_to_bod
-                    else '<div class="transfer-route-marker"></div>',
-                    unsafe_allow_html=True,
-                )
-                if st.button(
-                    f"{bodega1_nombre} → {bodega2_nombre}",
-                    use_container_width=True,
-                    key="dir_btn_1",
-                ):
-                    st.session_state.transfer_dir = dir_opt1
-                    st.rerun()
+                with d1:
+                    cls = "transfer-route-state active" if is_casa_to_bod else "transfer-route-state"
+                    st.markdown(f'<div class="{cls}"></div>', unsafe_allow_html=True)
+                    if st.button(
+                        f"{bodega1_nombre} → {bodega2_nombre}",
+                        use_container_width=True,
+                        key="dir_btn_1",
+                    ):
+                        st.session_state.transfer_dir = dir_opt1
+                        st.rerun()
 
-            with d2:
-                st.markdown(
-                    '<div class="transfer-route-active"></div>' if not is_casa_to_bod
-                    else '<div class="transfer-route-marker"></div>',
-                    unsafe_allow_html=True,
-                )
-                if st.button(
-                    f"{bodega2_nombre} → {bodega1_nombre}",
-                    use_container_width=True,
-                    key="dir_btn_2",
-                ):
-                    st.session_state.transfer_dir = dir_opt2
-                    st.rerun()
+                with d2:
+                    cls = "transfer-route-state active" if not is_casa_to_bod else "transfer-route-state"
+                    st.markdown(f'<div class="{cls}"></div>', unsafe_allow_html=True)
+                    if st.button(
+                        f"{bodega2_nombre} → {bodega1_nombre}",
+                        use_container_width=True,
+                        key="dir_btn_2",
+                    ):
+                        st.session_state.transfer_dir = dir_opt2
+                        st.rerun()
 
             st.markdown('<span class="inv-tr-label" style="margin-top:12px;display:block">Cantidad a Transferir</span>', unsafe_allow_html=True)
             qty = st.number_input(

@@ -87,6 +87,14 @@ def inject_css() -> None:
           .inv-tab-active,
           .transfer-route-marker,
           .transfer-route-active,
+          .ventas-mode-nav-marker,
+          .ventas-mode-state,
+          .bodega-sel-nav-marker,
+          .bodega-sel-state,
+          .inv-tabs-nav-marker,
+          .inv-tabs-state,
+          .transfer-route-nav-marker,
+          .transfer-route-state,
           .scheletro-nav-state {
             display: none;
           }
@@ -94,6 +102,8 @@ def inject_css() -> None:
           /* =========================================================
              REGLAS RESPONSIVAS PARA BOTONES EN FILA (2 o 3 columnas)
              ========================================================= */
+
+          /* Sistema viejo */
           div[data-testid="stHorizontalBlock"]:has(> div[data-testid="stColumn"] > .mode-tab-marker,
                                                    > div[data-testid="stColumn"] > .mode-tab-active,
                                                    > div[data-testid="stColumn"] > .bodega-tab-marker,
@@ -133,6 +143,36 @@ def inject_css() -> None:
               width: 100% !important;
           }
 
+          /* Sistema nuevo por contenedor + state */
+          div[data-testid="stVerticalBlock"]:has(.ventas-mode-nav-marker) div[data-testid="stHorizontalBlock"],
+          div[data-testid="stVerticalBlock"]:has(.bodega-sel-nav-marker) div[data-testid="stHorizontalBlock"],
+          div[data-testid="stVerticalBlock"]:has(.inv-tabs-nav-marker) div[data-testid="stHorizontalBlock"],
+          div[data-testid="stVerticalBlock"]:has(.transfer-route-nav-marker) div[data-testid="stHorizontalBlock"] {
+              flex-wrap: nowrap !important;
+              gap: 0.75rem !important;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.ventas-mode-nav-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+          div[data-testid="stVerticalBlock"]:has(.bodega-sel-nav-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+          div[data-testid="stVerticalBlock"]:has(.inv-tabs-nav-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"],
+          div[data-testid="stVerticalBlock"]:has(.transfer-route-nav-marker) div[data-testid="stHorizontalBlock"] > div[data-testid="stColumn"] {
+              flex: 1 1 0% !important;
+              min-width: 0 !important;
+          }
+
+          div[data-testid="stVerticalBlock"]:has(.ventas-mode-nav-marker) div[data-testid="stColumn"]:has(.ventas-mode-state) div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.ventas-mode-nav-marker) div[data-testid="column"]:has(.ventas-mode-state) div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.bodega-sel-nav-marker) div[data-testid="stColumn"]:has(.bodega-sel-state) div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.bodega-sel-nav-marker) div[data-testid="column"]:has(.bodega-sel-state) div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.inv-tabs-nav-marker) div[data-testid="stColumn"]:has(.inv-tabs-state) div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.inv-tabs-nav-marker) div[data-testid="column"]:has(.inv-tabs-state) div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.transfer-route-nav-marker) div[data-testid="stColumn"]:has(.transfer-route-state) div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.transfer-route-nav-marker) div[data-testid="column"]:has(.transfer-route-state) div[data-testid="stButton"] > button {
+              white-space: normal !important;
+              word-break: break-word !important;
+              width: 100% !important;
+          }
+
           @media (max-width: 480px) {
               div[data-testid="stColumn"]:has(.transfer-route-marker) div[data-testid="stButton"] > button,
               div[data-testid="stColumn"]:has(.transfer-route-active) div[data-testid="stButton"] > button,
@@ -141,7 +181,11 @@ def inject_css() -> None:
               div[data-testid="stColumn"]:has(.bodega-tab-marker) div[data-testid="stButton"] > button,
               div[data-testid="stColumn"]:has(.bodega-tab-active) div[data-testid="stButton"] > button,
               div[data-testid="stColumn"]:has(.inv-tab-marker) div[data-testid="stButton"] > button,
-              div[data-testid="stColumn"]:has(.inv-tab-active) div[data-testid="stButton"] > button {
+              div[data-testid="stColumn"]:has(.inv-tab-active) div[data-testid="stButton"] > button,
+              div[data-testid="stVerticalBlock"]:has(.ventas-mode-nav-marker) div[data-testid="stColumn"]:has(.ventas-mode-state) div[data-testid="stButton"] > button,
+              div[data-testid="stVerticalBlock"]:has(.bodega-sel-nav-marker) div[data-testid="stColumn"]:has(.bodega-sel-state) div[data-testid="stButton"] > button,
+              div[data-testid="stVerticalBlock"]:has(.inv-tabs-nav-marker) div[data-testid="stColumn"]:has(.inv-tabs-state) div[data-testid="stButton"] > button,
+              div[data-testid="stVerticalBlock"]:has(.transfer-route-nav-marker) div[data-testid="stColumn"]:has(.transfer-route-state) div[data-testid="stButton"] > button {
                   font-size: 0.85rem !important;
                   padding: 8px 4px !important;
               }
@@ -150,6 +194,32 @@ def inject_css() -> None:
                   font-size: 0.7rem !important;
                   padding: 6px 2px !important;
               }
+          }
+
+
+          /* Refuerzo anti-apilado para el sistema nuevo */
+          div[data-testid="stHorizontalBlock"]:has(.ventas-mode-state),
+          div[data-testid="stHorizontalBlock"]:has(.bodega-sel-state),
+          div[data-testid="stHorizontalBlock"]:has(.inv-tabs-state),
+          div[data-testid="stHorizontalBlock"]:has(.transfer-route-state) {
+              flex-wrap: nowrap !important;
+          }
+
+          div[data-testid="stHorizontalBlock"]:has(.ventas-mode-state) > div[data-testid="stColumn"],
+          div[data-testid="stHorizontalBlock"]:has(.bodega-sel-state) > div[data-testid="stColumn"],
+          div[data-testid="stHorizontalBlock"]:has(.inv-tabs-state) > div[data-testid="stColumn"],
+          div[data-testid="stHorizontalBlock"]:has(.transfer-route-state) > div[data-testid="stColumn"] {
+              flex: 1 1 0% !important;
+              min-width: 0 !important;
+          }
+
+          div[data-testid="stHorizontalBlock"]:has(.ventas-mode-state) > div[data-testid="stColumn"] div[data-testid="stButton"] > button,
+          div[data-testid="stHorizontalBlock"]:has(.bodega-sel-state) > div[data-testid="stColumn"] div[data-testid="stButton"] > button,
+          div[data-testid="stHorizontalBlock"]:has(.inv-tabs-state) > div[data-testid="stColumn"] div[data-testid="stButton"] > button,
+          div[data-testid="stHorizontalBlock"]:has(.transfer-route-state) > div[data-testid="stColumn"] div[data-testid="stButton"] > button {
+              width: 100% !important;
+              white-space: normal !important;
+              word-break: break-word !important;
           }
 
           /* =========================================================
@@ -180,11 +250,18 @@ def inject_css() -> None:
             color: rgba(255,255,255,1) !important;
           }
 
+          div[data-testid="column"]:has(.mode-tab-active) div[data-testid="stButton"] > button:hover,
+          div[data-testid="stColumn"]:has(.mode-tab-active) div[data-testid="stButton"] > button:hover {
+            background: rgba(34,197,94,0.25) !important;
+            color: #38d46a !important;
+          }
+
           div[data-testid="column"]:has(.mode-tab-active) div[data-testid="stButton"] > button,
           div[data-testid="stColumn"]:has(.mode-tab-active) div[data-testid="stButton"] > button {
-            background: rgba(255,255,255,0.15) !important;
-            border-color: rgba(255,255,255,0.25) !important;
-            color: white !important;
+            border-color: rgba(34,197,94,0.7) !important;
+            background: rgba(34,197,94,0.20) !important;
+            color: #38d46a !important;
+            box-shadow: inset 0 0 0 1px rgba(34,197,94,0.2) !important;
           }
 
           /* Botones de bodega (Casa/Bodega) */
@@ -281,7 +358,112 @@ def inject_css() -> None:
             box-shadow: inset 0 0 0 1px rgba(34,197,94,0.2) !important;
           }
 
-          /* Resto de estilos existentes (sin cambios importantes) */
+          /* =========================================================
+             ESTADO ACTIVO — patrón contenedor + clase doble
+             (igual que navigation.py: stVerticalBlock:has(marker) + stColumn:has(state.active))
+             ========================================================= */
+
+          /* Ocultar todos los marcadores nuevos */
+          .ventas-mode-nav-marker,
+          .ventas-mode-state,
+          .bodega-sel-nav-marker,
+          .bodega-sel-state,
+          .inv-tabs-nav-marker,
+          .inv-tabs-state,
+          .transfer-route-nav-marker,
+          .transfer-route-state {
+            display: none;
+          }
+
+          /* ── Ventas / Egresos ── */
+          div[data-testid="stVerticalBlock"]:has(.ventas-mode-nav-marker)
+            div[data-testid="stColumn"]:has(.ventas-mode-state.active)
+            div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.ventas-mode-nav-marker)
+            div[data-testid="column"]:has(.ventas-mode-state.active)
+            div[data-testid="stButton"] > button {
+              border-color: rgba(34,197,94,0.7) !important;
+              background: rgba(34,197,94,0.20) !important;
+              color: #38d46a !important;
+              box-shadow: inset 0 0 0 1px rgba(34,197,94,0.2) !important;
+          }
+          div[data-testid="stVerticalBlock"]:has(.ventas-mode-nav-marker)
+            div[data-testid="stColumn"]:has(.ventas-mode-state.active)
+            div[data-testid="stButton"] > button:hover,
+          div[data-testid="stVerticalBlock"]:has(.ventas-mode-nav-marker)
+            div[data-testid="column"]:has(.ventas-mode-state.active)
+            div[data-testid="stButton"] > button:hover {
+              background: rgba(34,197,94,0.28) !important;
+              color: #38d46a !important;
+          }
+
+          /* ── Bodega de Salida (Casa / Gamaliel) ── */
+          div[data-testid="stVerticalBlock"]:has(.bodega-sel-nav-marker)
+            div[data-testid="stColumn"]:has(.bodega-sel-state.active)
+            div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.bodega-sel-nav-marker)
+            div[data-testid="column"]:has(.bodega-sel-state.active)
+            div[data-testid="stButton"] > button {
+              border-color: rgba(34,197,94,0.7) !important;
+              background: rgba(34,197,94,0.20) !important;
+              color: #38d46a !important;
+              box-shadow: inset 0 0 0 1px rgba(34,197,94,0.2) !important;
+          }
+          div[data-testid="stVerticalBlock"]:has(.bodega-sel-nav-marker)
+            div[data-testid="stColumn"]:has(.bodega-sel-state.active)
+            div[data-testid="stButton"] > button:hover,
+          div[data-testid="stVerticalBlock"]:has(.bodega-sel-nav-marker)
+            div[data-testid="column"]:has(.bodega-sel-state.active)
+            div[data-testid="stButton"] > button:hover {
+              background: rgba(34,197,94,0.28) !important;
+              color: #38d46a !important;
+          }
+
+          /* ── Tabs Inventario (INVENTARIO / TRANSFERIR / INGRESO) ── */
+          div[data-testid="stVerticalBlock"]:has(.inv-tabs-nav-marker)
+            div[data-testid="stColumn"]:has(.inv-tabs-state.active)
+            div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.inv-tabs-nav-marker)
+            div[data-testid="column"]:has(.inv-tabs-state.active)
+            div[data-testid="stButton"] > button {
+              border-color: rgba(34,197,94,0.7) !important;
+              background: rgba(34,197,94,0.20) !important;
+              color: #38d46a !important;
+              box-shadow: inset 0 0 0 1px rgba(34,197,94,0.2) !important;
+          }
+          div[data-testid="stVerticalBlock"]:has(.inv-tabs-nav-marker)
+            div[data-testid="stColumn"]:has(.inv-tabs-state.active)
+            div[data-testid="stButton"] > button:hover,
+          div[data-testid="stVerticalBlock"]:has(.inv-tabs-nav-marker)
+            div[data-testid="column"]:has(.inv-tabs-state.active)
+            div[data-testid="stButton"] > button:hover {
+              background: rgba(34,197,94,0.28) !important;
+              color: #38d46a !important;
+          }
+
+          /* ── Ruta de Transferencia ── */
+          div[data-testid="stVerticalBlock"]:has(.transfer-route-nav-marker)
+            div[data-testid="stColumn"]:has(.transfer-route-state.active)
+            div[data-testid="stButton"] > button,
+          div[data-testid="stVerticalBlock"]:has(.transfer-route-nav-marker)
+            div[data-testid="column"]:has(.transfer-route-state.active)
+            div[data-testid="stButton"] > button {
+              border-color: rgba(34,197,94,0.7) !important;
+              background: rgba(34,197,94,0.20) !important;
+              color: #38d46a !important;
+              box-shadow: inset 0 0 0 1px rgba(34,197,94,0.2) !important;
+          }
+          div[data-testid="stVerticalBlock"]:has(.transfer-route-nav-marker)
+            div[data-testid="stColumn"]:has(.transfer-route-state.active)
+            div[data-testid="stButton"] > button:hover,
+          div[data-testid="stVerticalBlock"]:has(.transfer-route-nav-marker)
+            div[data-testid="column"]:has(.transfer-route-state.active)
+            div[data-testid="stButton"] > button:hover {
+              background: rgba(34,197,94,0.28) !important;
+              color: #38d46a !important;
+          }
+
+
           .sche-section-title {
             font-size: 1.08rem;
             font-weight: 700;

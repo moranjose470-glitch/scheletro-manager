@@ -341,27 +341,25 @@ def render_ventas_page(
 
     modo_actual = st.session_state["ventas_modo"]
 
-    m1, m2 = st.columns(2)
+    with st.container():
+        st.markdown('<div class="ventas-mode-nav-marker"></div>', unsafe_allow_html=True)
+        m1, m2 = st.columns(2)
 
-    with m1:
-        st.markdown(
-            '<span class="mode-tab-active"></span>' if modo_actual == "ventas" else '<span class="mode-tab-marker"></span>',
-            unsafe_allow_html=True,
-        )
-        if st.button("🛒  Ventas", key="ventas_modo_btn_ventas", use_container_width=True):
-            if modo_actual != "ventas":
-                st.session_state["ventas_modo"] = "ventas"
-                st.rerun()
+        with m1:
+            cls = "ventas-mode-state active" if modo_actual == "ventas" else "ventas-mode-state"
+            st.markdown(f'<div class="{cls}"></div>', unsafe_allow_html=True)
+            if st.button("🛒  Ventas", key="ventas_modo_btn_ventas", use_container_width=True):
+                if modo_actual != "ventas":
+                    st.session_state["ventas_modo"] = "ventas"
+                    st.rerun()
 
-    with m2:
-        st.markdown(
-            '<span class="mode-tab-active"></span>' if modo_actual == "egresos" else '<span class="mode-tab-marker"></span>',
-            unsafe_allow_html=True,
-        )
-        if st.button("💸  Egresos", key="ventas_modo_btn_egresos", use_container_width=True):
-            if modo_actual != "egresos":
-                st.session_state["ventas_modo"] = "egresos"
-                st.rerun()
+        with m2:
+            cls = "ventas-mode-state active" if modo_actual == "egresos" else "ventas-mode-state"
+            st.markdown(f'<div class="{cls}"></div>', unsafe_allow_html=True)
+            if st.button("💸  Egresos", key="ventas_modo_btn_egresos", use_container_width=True):
+                if modo_actual != "egresos":
+                    st.session_state["ventas_modo"] = "egresos"
+                    st.rerun()
 
     modo_actual = st.session_state["ventas_modo"]
 
@@ -378,27 +376,25 @@ def render_ventas_page(
 
         bodega_venta = st.session_state["bodega_venta"]
 
-        b1, b2 = st.columns(2)
+        with st.container():
+            st.markdown('<div class="bodega-sel-nav-marker"></div>', unsafe_allow_html=True)
+            b1, b2 = st.columns(2)
 
-        with b1:
-            st.markdown(
-                '<span class="mode-tab-active"></span>' if bodega_venta == "Casa" else '<span class="mode-tab-marker"></span>',
-                unsafe_allow_html=True,
-            )
-            if st.button(fmt_bodega("Casa"), key="bodega_btn_casa", use_container_width=True):
-                if bodega_venta != "Casa":
-                    st.session_state["bodega_venta"] = "Casa"
-                    st.rerun()
+            with b1:
+                cls = "bodega-sel-state active" if bodega_venta == "Casa" else "bodega-sel-state"
+                st.markdown(f'<div class="{cls}"></div>', unsafe_allow_html=True)
+                if st.button(fmt_bodega("Casa"), key="bodega_btn_casa", use_container_width=True):
+                    if bodega_venta != "Casa":
+                        st.session_state["bodega_venta"] = "Casa"
+                        st.rerun()
 
-        with b2:
-            st.markdown(
-                '<span class="mode-tab-active"></span>' if bodega_venta == "Bodega" else '<span class="mode-tab-marker"></span>',
-                unsafe_allow_html=True,
-            )
-            if st.button(fmt_bodega("Bodega"), key="bodega_btn_bodega", use_container_width=True):
-                if bodega_venta != "Bodega":
-                    st.session_state["bodega_venta"] = "Bodega"
-                    st.rerun()
+            with b2:
+                cls = "bodega-sel-state active" if bodega_venta == "Bodega" else "bodega-sel-state"
+                st.markdown(f'<div class="{cls}"></div>', unsafe_allow_html=True)
+                if st.button(fmt_bodega("Bodega"), key="bodega_btn_bodega", use_container_width=True):
+                    if bodega_venta != "Bodega":
+                        st.session_state["bodega_venta"] = "Bodega"
+                        st.rerun()
 
         bodega_venta = st.session_state["bodega_venta"]
 
