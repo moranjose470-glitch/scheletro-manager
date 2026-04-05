@@ -314,15 +314,33 @@ def render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega
 
     # ── Tab navigation ────────────────────────────────────────────
     t1, t2, t3 = st.columns(3)
+
     with t1:
+        st.markdown(
+            '<div class="inv-tab-active"></div>' if st.session_state.inv_tab == "inventario"
+            else '<div class="inv-tab-marker"></div>',
+            unsafe_allow_html=True,
+        )
         if st.button("\nINVENTARIO", key="inv_tab_btn_inv", use_container_width=True):
             st.session_state.inv_tab = "inventario"
             st.rerun()
+
     with t2:
+        st.markdown(
+            '<div class="inv-tab-active"></div>' if st.session_state.inv_tab == "transferir"
+            else '<div class="inv-tab-marker"></div>',
+            unsafe_allow_html=True,
+        )
         if st.button("\nTRANSFERIR", key="inv_tab_btn_tr", use_container_width=True):
             st.session_state.inv_tab = "transferir"
             st.rerun()
+
     with t3:
+        st.markdown(
+            '<div class="inv-tab-active"></div>' if st.session_state.inv_tab == "ingreso"
+            else '<div class="inv-tab-marker"></div>',
+            unsafe_allow_html=True,
+        )
         if st.button("\nINGRESO", key="inv_tab_btn_ing", use_container_width=True):
             st.session_state.inv_tab = "ingreso"
             st.rerun()
