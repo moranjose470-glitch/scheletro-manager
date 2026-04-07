@@ -617,17 +617,22 @@ def render_ventas_page(
         if save_btn:
             try:
                 latest_inv = load_inventario(conn, ttl_s=0)
-                col_stock  = "Stock_Casa" if bodega_venta == "Casa" else "Stock_Bodega"
 
+                # FIX #2: validar stock usando la bodega interna de CADA ítem del carrito
                 for item in cart:
-                    sku_i  = str(item["SKU"]).strip()
-                    qty_i  = int(item["Cantidad"])
-                    match  = latest_inv[latest_inv["SKU"].astype(str).str.strip() == sku_i]
+                    sku_i      = str(item["SKU"]).strip()
+                    qty_i      = int(item["Cantidad"])
+                    # Bodega_Salida se guardó como clave interna ("Casa" / "Bodega") al añadir al carrito
+                    item_col   = "Stock_Casa" if item["Bodega_Salida"] == "Casa" else "Stock_Bodega"
+                    match      = latest_inv[latest_inv["SKU"].astype(str).str.strip() == sku_i]
                     if match.empty:
                         raise ValueError(f"SKU no encontrado: {sku_i}")
-                    available = int(_clean_number(match.iloc[0].get(col_stock, 0)))
+                    available = int(_clean_number(match.iloc[0].get(item_col, 0)))
                     if available < qty_i:
-                        raise ValueError(f"Stock insuficiente para {sku_i}. Disponible={available}, Pedido={qty_i}")
+                        raise ValueError(
+                            f"Stock insuficiente para {sku_i} en {fmt_bodega(item['Bodega_Salida'])}. "
+                            f"Disponible={available}, Pedido={qty_i}"
+                        )
 
                 cab_df   = load_cabecera(conn, ttl_s=0)
                 det_df   = load_detalle(conn, ttl_s=0)
@@ -659,7 +664,8 @@ def render_ventas_page(
                         "Drop": str(item["Drop"]).strip(),
                         "Color": str(item["Color"]).strip(),
                         "Talla": str(item["Talla"]).strip(),
-                        "Bodega_Salida": fmt_bodega(bodega_venta),
+                        # FIX #1: guardar nombre visible en Detalle pero usando la clave interna del ítem
+                        "Bodega_Salida": fmt_bodega(item["Bodega_Salida"]),
                         "Cantidad": int(item["Cantidad"]),
                         "Precio_Unitario": float(item["Precio_Unitario"]),
                         "Descuento_Unitario": float(item["Descuento_Unitario"]),
@@ -678,11 +684,13 @@ def render_ventas_page(
 
                 inv_updated = latest_inv.copy()
                 for item in cart:
-                    sku_i  = str(item["SKU"]).strip()
-                    qty_i  = int(item["Cantidad"])
-                    mask   = inv_updated["SKU"].astype(str).str.strip() == sku_i
-                    ix     = inv_updated.index[mask].tolist()[0]
-                    inv_updated.loc[ix, col_stock] = int(_clean_number(inv_updated.loc[ix, col_stock])) - qty_i
+                    sku_i    = str(item["SKU"]).strip()
+                    qty_i    = int(item["Cantidad"])
+                    # FIX #2: descontar de la bodega correcta de CADA ítem, no de la bodega actual del selector
+                    item_col = "Stock_Casa" if item["Bodega_Salida"] == "Casa" else "Stock_Bodega"
+                    mask     = inv_updated["SKU"].astype(str).str.strip() == sku_i
+                    ix       = inv_updated.index[mask].tolist()[0]
+                    inv_updated.loc[ix, item_col] = int(_clean_number(inv_updated.loc[ix, item_col])) - qty_i
 
                 save_sheet(conn, SHEET_INVENTARIO, inv_updated)
                 st.success(f"✅ Venta registrada: {venta_id}")

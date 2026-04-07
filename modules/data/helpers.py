@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from typing import Any, Iterable
 import re
 import unicodedata
@@ -112,7 +113,20 @@ def _to_bool(v: Any) -> bool:
 
 def _is_rate_limit(e: Exception) -> bool:
     s = str(e)
-    return ("code': 429" in s) or ("RESOURCE_EXHAUSTED" in s) or ("RATE_LIMIT_EXCEEDED" in s)
+    return (
+        ("code': 429" in s)
+        or ('code": 429' in s)
+        or ("429" in s and "rate" in s.lower())
+        or ("RESOURCE_EXHAUSTED" in s)
+        or ("RATE_LIMIT_EXCEEDED" in s)
+    )
+
+
+def _raise_rate_limit_error(action: str, worksheet: str, original_error: Exception) -> None:
+    raise RuntimeError(
+        f"Google Sheets devolvió rate limit (429) al {action} la hoja '{worksheet}'. "
+        f"Reintentá en 60–90 segundos. Detalle original: {original_error}"
+    ) from original_error
 
 
 def _normalize_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -131,7 +145,7 @@ def _cached_read_45(worksheet: str) -> pd.DataFrame:
         df = _conn.read(worksheet=worksheet, ttl=45)
         return _normalize_df(df)
     except Exception as e:
-        # No cachear un estado "malo" indefinidamente: devolvemos DF vacío para evitar romper UI.
+        # Para lecturas cacheadas no reventamos toda la UI.
         if _is_rate_limit(e):
             st.warning("Google Sheets está rate-limited (429). Usando cache/local vacío temporalmente.")
         else:
@@ -172,21 +186,25 @@ def load_raw_sheet(conn: GSheetsConnection, worksheet: str, ttl_s: int = 45) -> 
     Lectura con cache (anti-429):
     - Usa cache_data para evitar lecturas repetidas en cada rerun.
     - ttl_s <= 0 fuerza lectura directa (sin cache_data) para operaciones críticas.
+    - En lecturas críticas, si hay 429, SE LANZA EXCEPCIÓN.
     """
     ttl_s = int(ttl_s or 45)
 
-    # Forzar lectura directa (para guardados / validaciones críticas)
+    # Lectura crítica/directa: NO debe fallar silenciosamente
     if ttl_s <= 0:
         try:
             df = conn.read(worksheet=worksheet, ttl=1)
             return _normalize_df(df)
         except Exception as e:
             if _is_rate_limit(e):
-                st.error("Google Sheets está rate-limited (429). Esperá un momento y reintentá.")
-                return pd.DataFrame()
+                st.error(
+                    "⚠️ Google Sheets te limitó por demasiadas solicitudes (error 429) al LEER. "
+                    "Esperá 60–90 segundos y reintentá."
+                )
+                _raise_rate_limit_error("leer", worksheet, e)
             raise
 
-    # Ruteo por TTL (mantiene el espíritu de los ttl_s del código)
+    # Lectura cacheada/no crítica
     if ttl_s <= 60:
         return _cached_read_45(worksheet).copy()
     if ttl_s <= 300:
@@ -195,7 +213,14 @@ def load_raw_sheet(conn: GSheetsConnection, worksheet: str, ttl_s: int = 45) -> 
 
 
 def save_sheet(conn: GSheetsConnection, worksheet: str, df: pd.DataFrame) -> None:
-    """Escribe un DataFrame a Google Sheets. (ÚNICO punto de escritura)"""
+    """
+    Escribe un DataFrame a Google Sheets.
+    Punto único de escritura.
+
+    IMPORTANTE:
+    - Si falla por 429, LANZA EXCEPCIÓN.
+    - Ya no hace return silencioso.
+    """
     try:
         conn.update(worksheet=worksheet, data=df)
     except Exception as e:
@@ -204,10 +229,10 @@ def save_sheet(conn: GSheetsConnection, worksheet: str, df: pd.DataFrame) -> Non
                 "⚠️ Google Sheets te limitó por demasiadas solicitudes (error 429) al ESCRIBIR. "
                 "Esperá 60–90 segundos y reintentá."
             )
-            return
+            _raise_rate_limit_error("escribir", worksheet, e)
         raise
 
-    # Importante: limpiamos cache para que las lecturas posteriores vean el cambio.
+    # Limpiar cache para que las lecturas posteriores vean el cambio real.
     try:
         st.cache_data.clear()
     except Exception:
@@ -250,14 +275,14 @@ def load_egresos(conn: GSheetsConnection, ttl_s: int = 60) -> pd.DataFrame:
         return _align_required_columns(pd.DataFrame(), EG_REQUIRED)
     df = _align_required_columns(df, EG_REQUIRED)
     df = _to_numeric(df, ["Monto"])
-    # Convertir solo columnas de texto (Monto ya es numérico)
     for c in ["Egreso_ID", "Fecha", "Concepto", "Categoria", "Notas", "Drop"]:
         df[c] = df[c].astype(str).fillna("").str.strip()
     return df
 
 
-def _next_egreso_id(eg_df: pd.DataFrame) -> str:
-    year = datetime.now().year
+def _next_egreso_id(eg_df: pd.DataFrame, tz: str = "America/El_Salvador") -> str:
+    now = datetime.now(ZoneInfo(tz))
+    year = now.year
     prefix = f"E-{year}-"
     if eg_df is None or eg_df.empty or "Egreso_ID" not in eg_df.columns:
         return f"{prefix}0001"
@@ -288,7 +313,6 @@ def load_categorias(conn: GSheetsConnection, ttl_s: int = 300) -> pd.DataFrame:
 def load_catalogos(conn: GSheetsConnection, ttl_s: int = 600) -> pd.DataFrame:
     """Lee hoja Catalogos (Drops, Colores, etc.) con cache."""
     df = load_raw_sheet(conn, SHEET_CATALOGOS, ttl_s=ttl_s)
-    # Normaliza encabezados por si vienen con espacios
     df.columns = [str(c).strip() for c in df.columns]
     return df
 
@@ -299,12 +323,10 @@ def parse_catalogos(df: pd.DataFrame) -> dict[str, list[dict[str, str]]]:
         return {"drops": [], "colores": []}
 
     work = df.copy()
-    # En tu sheet, a veces puede quedar una celda vacía en 'Catalogo' (ej: A21).
-    # Para que no se rompa, heredamos el último valor válido.
+
     if "Catalogo" in work.columns:
         work["Catalogo"] = work["Catalogo"].ffill()
 
-    # Limpieza básica
     for col in ["Catalogo", "Valor", "Codigo"]:
         if col in work.columns:
             work[col] = work[col].astype(str).str.strip()
@@ -320,7 +342,6 @@ def parse_catalogos(df: pd.DataFrame) -> dict[str, list[dict[str, str]]]:
             if not valor:
                 continue
             if not codigo or codigo.lower() == "nan":
-                # fallback: código = valor (sanitizado)
                 codigo = re.sub(r"\s+", "", valor).upper()
             out.append({"valor": valor, "codigo": codigo})
         return out
@@ -347,7 +368,7 @@ def suggest_product_code(product_name: str) -> str:
     s = _slug_upper(product_name)
     if not s:
         return "PRD"
-    # Quita palabras ultra genéricas (pero deja 'HAT' y 'LONGSLEEVE' porque a veces son parte del estilo)
+
     stop = {"T-SHIRT", "TSHIRT", "TEE", "SHIRT"}
     words = [w for w in s.replace("-", " ").split() if w and w not in stop]
     if not words:
@@ -379,11 +400,11 @@ def get_existing_product_code(inv_df: pd.DataFrame, product_name: str) -> str | 
     sub = inv_df[inv_df.get("Producto", "") == product_name]
     if sub.empty:
         return None
-    # SKU esperado: DROP-PROD-COLOR-TALLA
+
     segs = sub["SKU"].astype(str).str.split("-", n=3, expand=True)
     if segs.shape[1] < 2:
         return None
-    # toma el más común
+
     prod_codes = segs[1].dropna().astype(str).str.strip()
     if prod_codes.empty:
         return None
