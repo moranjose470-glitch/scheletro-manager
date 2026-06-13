@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from math import ceil
 import html
 
 import pandas as pd
@@ -16,45 +17,27 @@ def _inject_finanzas_css() -> None:
     st.markdown(
         """
         <style>
-          :root {
-            --fin-bg:          #0b1326;
-            --fin-card:        #171f33;
-            --fin-card-low:    #131b2e;
-            --fin-card-high:   #2d3449;
-            --fin-primary:     #4edea3;
-            --fin-primary-alt: #10b981;
-            --fin-text:        #dae2fd;
-            --fin-muted:       #bbcabf;
-            --fin-error:       #ffb4ab;
-            --fin-border:      rgba(60,74,66,0.35);
-          }
-
-          .fin-card {
-            background: var(--fin-card);
+          /* Fondos transparentes para que hereden el color de la pestaña */
+          .fin-card, .fin-card-low {
+            background: transparent;
             border-radius: 16px;
             padding: 20px;
             margin-bottom: 16px;
-            border: 1px solid var(--fin-border);
+            border: 1px solid rgba(255, 255, 255, 0.12);  /* Borde sutil */
           }
-          .fin-card-low {
-            background: var(--fin-card-low);
-            border-radius: 16px;
-            padding: 20px;
-            margin-bottom: 16px;
-          }
-
+          /* Texto blanco normal, sin tintes */
           .fin-label {
             font-size: 0.65rem;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.06em;
-            color: var(--fin-muted);
+            color: #cccccc;
             margin-bottom: 4px;
           }
           .fin-big-number {
             font-size: 2.4rem;
             font-weight: 900;
-            color: var(--fin-primary);
+            color: #ffffff;
             line-height: 1.1;
             margin-bottom: 16px;
           }
@@ -68,16 +51,17 @@ def _inject_finanzas_css() -> None:
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.05em;
-            color: var(--fin-muted);
+            color: #cccccc;
             display: block;
             margin-bottom: 2px;
           }
           .fin-mini-value {
             font-size: 0.88rem;
             font-weight: 700;
-            color: var(--fin-text);
+            color: #ffffff;
           }
-          .fin-mini-value.green { color: var(--fin-primary); }
+          /* Ya no usamos verde; dejamos blanco para consistencia */
+          .fin-mini-value.green { color: #ffffff; }
 
           .fin-eq-header {
             display: flex;
@@ -88,39 +72,39 @@ def _inject_finanzas_css() -> None:
           .fin-eq-pct {
             font-size: 0.8rem;
             font-weight: 800;
-            color: var(--fin-primary);
+            color: #a0a0a0;   /* Acento neutro */
           }
           .fin-bar-track {
             height: 10px;
             width: 100%;
-            background: var(--fin-card-high);
+            background: rgba(255, 255, 255, 0.1);
             border-radius: 999px;
             overflow: hidden;
             margin-bottom: 10px;
           }
           .fin-bar-fill {
             height: 100%;
-            background: linear-gradient(90deg, #4edea3, #10b981);
+            background: #a0a0a0;   /* Relleno gris claro */
             border-radius: 999px;
-            box-shadow: 0 0 8px rgba(78,222,163,0.3);
           }
           .fin-eq-footer {
             display: flex;
             justify-content: space-between;
             font-size: 0.7rem;
             font-weight: 600;
-            color: var(--fin-text);
+            color: #ffffff;
           }
-          .fin-eq-footer span.muted { color: var(--fin-muted); }
+          .fin-eq-footer span.muted { color: #cccccc; }
 
           .fin-section-title {
             font-size: 1.08rem;
             font-weight: 800;
-            color: var(--fin-text);
+            color: #ffffff;
             margin: 20px 0 12px 0;
           }
           .fin-star-list {
-            background: var(--fin-card);
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 16px;
             overflow: hidden;
           }
@@ -129,7 +113,7 @@ def _inject_finanzas_css() -> None:
             align-items: center;
             justify-content: space-between;
             padding: 14px 18px;
-            border-bottom: 1px solid rgba(60,74,66,0.15);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
           }
           .fin-star-item:last-child { border-bottom: none; }
           .fin-star-left {
@@ -140,18 +124,18 @@ def _inject_finanzas_css() -> None:
           .fin-star-num {
             font-size: 0.82rem;
             font-weight: 800;
-            color: var(--fin-primary);
+            color: #a0a0a0;
             min-width: 24px;
           }
           .fin-star-name {
             font-size: 0.88rem;
             font-weight: 600;
-            color: var(--fin-text);
+            color: #ffffff;
           }
           .fin-star-price {
             font-size: 0.88rem;
             font-weight: 800;
-            color: var(--fin-text);
+            color: #ffffff;
           }
 
           .fin-prog-label {
@@ -161,20 +145,20 @@ def _inject_finanzas_css() -> None:
             text-transform: uppercase;
             font-weight: 700;
             letter-spacing: 0.05em;
-            color: var(--fin-muted);
+            color: #cccccc;
             margin-bottom: 6px;
           }
           .fin-bar-track-sm {
             height: 7px;
             width: 100%;
-            background: var(--fin-card-high);
+            background: rgba(255, 255, 255, 0.1);
             border-radius: 999px;
             overflow: hidden;
             margin-bottom: 14px;
           }
           .fin-bar-fill-sm {
             height: 100%;
-            background: var(--fin-primary);
+            background: #a0a0a0;
             border-radius: 999px;
           }
           .fin-metrics-grid {
@@ -189,23 +173,23 @@ def _inject_finanzas_css() -> None:
             text-transform: uppercase;
             font-weight: 700;
             letter-spacing: 0.05em;
-            color: var(--fin-muted);
+            color: #cccccc;
             display: block;
             margin-bottom: 2px;
           }
           .fin-metric-value {
             font-size: 0.88rem;
             font-weight: 700;
-            color: var(--fin-text);
+            color: #ffffff;
           }
-          .fin-metric-value.green { color: var(--fin-primary); }
+          .fin-metric-value.green { color: #ffffff; }
 
           .fin-pay-label {
             font-size: 0.65rem;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.06em;
-            color: var(--fin-muted);
+            color: #cccccc;
             margin-bottom: 16px;
             display: block;
           }
@@ -221,23 +205,23 @@ def _inject_finanzas_css() -> None:
           .fin-pay-name {
             font-size: 0.88rem;
             font-weight: 600;
-            color: var(--fin-text);
+            color: #ffffff;
           }
           .fin-pay-amount {
             font-size: 0.88rem;
             font-weight: 800;
-            color: var(--fin-text);
+            color: #ffffff;
           }
           .fin-pay-bar-track {
             height: 5px;
             width: 100%;
-            background: var(--fin-card-high);
+            background: rgba(255, 255, 255, 0.1);
             border-radius: 999px;
             overflow: hidden;
           }
           .fin-pay-bar-fill {
             height: 100%;
-            background: var(--fin-primary-alt);
+            background: #a0a0a0;
             border-radius: 999px;
           }
 
@@ -248,8 +232,8 @@ def _inject_finanzas_css() -> None:
             margin-bottom: 16px;
           }
           .fin-kpi-tile {
-            background: var(--fin-card);
-            border: 1px solid var(--fin-border);
+            background: transparent;
+            border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 16px;
             padding: 18px;
           }
@@ -258,7 +242,7 @@ def _inject_finanzas_css() -> None:
             text-transform: uppercase;
             font-weight: 700;
             letter-spacing: 0.05em;
-            color: var(--fin-muted);
+            color: #cccccc;
             display: block;
             margin-bottom: 6px;
           }
@@ -266,19 +250,20 @@ def _inject_finanzas_css() -> None:
             font-size: 1.6rem;
             font-weight: 900;
             line-height: 1.1;
+            color: #ffffff;
           }
-          .fin-kpi-value.red { color: var(--fin-error); }
-          .fin-kpi-value.green { color: var(--fin-primary); }
+          .fin-kpi-value.red { color: #ff6b6b; }    /* Podés cambiarlo si preferís otro tono de advertencia */
+          .fin-kpi-value.green { color: #ffffff; }  /* Ya no usamos verde */
           .fin-kpi-sub {
             font-size: 0.62rem;
-            color: var(--fin-muted);
+            color: #cccccc;
             margin-top: 4px;
             display: block;
           }
 
           .fin-warn {
             font-size: 0.75rem;
-            color: var(--fin-muted);
+            color: #cccccc;
             padding: 8px 0 12px 0;
           }
         </style>
@@ -289,6 +274,36 @@ def _inject_finanzas_css() -> None:
 
 def _esc(value: object) -> str:
     return html.escape(str(value))
+
+
+def _calc_recuperacion_prendas(
+    inversion: float,
+    neto_recibido: float,
+    unidades_vendidas: int | float,
+) -> tuple[float, float, int | None]:
+    """
+    Calcula cuánta inversión falta por recuperar y cuántas prendas adicionales
+    habría que vender usando el neto promedio real por unidad vendida.
+
+    Se usa NETO porque el progreso actual de recuperación compara Neto vs Inversión.
+    Si el producto todavía no tiene una base de venta neta válida, devuelve None
+    para evitar inventar una cantidad.
+    """
+    inversion = float(inversion or 0.0)
+    neto_recibido = float(neto_recibido or 0.0)
+    unidades_vendidas = float(unidades_vendidas or 0.0)
+
+    faltante = max(inversion - neto_recibido, 0.0)
+    neto_promedio_por_prenda = (neto_recibido / unidades_vendidas) if unidades_vendidas > 0 else 0.0
+
+    if faltante <= 0:
+        prendas_faltantes = 0
+    elif neto_promedio_por_prenda > 0:
+        prendas_faltantes = int(ceil(faltante / neto_promedio_por_prenda))
+    else:
+        prendas_faltantes = None
+
+    return round(faltante, 2), round(neto_promedio_por_prenda, 2), prendas_faltantes
 
 
 # --------------------------------------------------
@@ -496,6 +511,12 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
     inv_total = _inv_amount_for_scope(active_drop, lines_f)
     if inv_total > 0:
         pct_eq = max(0.0, min(100.0, neto_recibido / inv_total * 100))
+        faltante_global, neto_prom_global, prendas_global = _calc_recuperacion_prendas(
+            inv_total,
+            neto_recibido,
+            unidades,
+        )
+        prendas_global_text = "—" if prendas_global is None else f"{prendas_global:,}"
         st.markdown(
             f"""
             <div class="fin-card-low">
@@ -509,6 +530,10 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
               <div class="fin-eq-footer">
                 <span>Recuperado: {money(neto_recibido)}</span>
                 <span class="muted">Meta: {money(inv_total)}</span>
+              </div>
+              <div class="fin-eq-footer">
+                <span>Faltante: {money(faltante_global)}</span>
+                <span class="muted">Prendas faltantes: {prendas_global_text}</span>
               </div>
             </div>
             """,
@@ -610,6 +635,13 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
             invv = float(r["Monto_Invertido"])
             pct_rec = max(0.0, min(100.0, (neto / invv * 100) if invv > 0 else 0.0))
             prog_text = f"{money(neto)} / {money(invv)}" if invv > 0 else "Sin inversión asignada"
+            faltante_rec, neto_prom_prenda, prendas_faltantes = _calc_recuperacion_prendas(
+                invv,
+                neto,
+                unids,
+            )
+            faltante_text = money(faltante_rec) if invv > 0 else "—"
+            prendas_faltantes_text = "—" if prendas_faltantes is None else f"{prendas_faltantes:,}"
 
             with st.expander(f"{prod} · {unids} unidades vendidas", expanded=False):
                 st.markdown(
@@ -645,6 +677,14 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
                       <div class="fin-metric-block right">
                         <span class="fin-metric-label">ROI</span>
                         <span class="fin-metric-value green">{roi:.1f}%</span>
+                      </div>
+                      <div class="fin-metric-block">
+                        <span class="fin-metric-label">Faltante</span>
+                        <span class="fin-metric-value">{faltante_text}</span>
+                      </div>
+                      <div class="fin-metric-block right">
+                        <span class="fin-metric-label">Prendas faltantes</span>
+                        <span class="fin-metric-value green">{prendas_faltantes_text}</span>
                       </div>
                     </div>
                     """,
