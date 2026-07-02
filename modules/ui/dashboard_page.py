@@ -384,6 +384,51 @@ def _order_products_summary(det_df: pd.DataFrame, venta_id: str, max_items: int 
     return ", ".join(parts)
 
 
+def _parse_fecha_series(df: pd.DataFrame) -> pd.Series:
+    """
+    Convierte la columna Fecha a datetime de forma robusta.
+    Soporta fechas ISO tipo 2026-07-02, formatos latinos tipo 02/07/2026
+    y, si existe columna Hora, une Fecha + Hora para evitar registros perdidos.
+    """
+    if df.empty or "Fecha" not in df.columns:
+        return pd.Series(pd.NaT, index=df.index, dtype="datetime64[ns]")
+
+    fecha = df["Fecha"].astype(str).str.strip()
+
+    if "Hora" in df.columns:
+        hora = df["Hora"].astype(str).str.strip()
+        tiene_hora_en_fecha = fecha.str.contains(r"\d{1,2}:\d{2}", regex=True, na=False)
+        tiene_hora_col = hora.ne("") & hora.ne("nan") & ~tiene_hora_en_fecha
+        raw = fecha.where(~tiene_hora_col, fecha + " " + hora)
+    else:
+        raw = fecha
+
+    # Primer intento: formato mixto moderno de pandas.
+    parsed = pd.to_datetime(raw, errors="coerce", format="mixed")
+
+    # Segundo intento: formato latino, útil cuando viene 02/07/2026.
+    missing = parsed.isna()
+    if missing.any():
+        parsed_latam = pd.to_datetime(raw[missing], errors="coerce", dayfirst=True)
+        parsed.loc[missing] = parsed_latam
+
+    return parsed
+
+
+def _month_label_es(period_str: str) -> str:
+    """Devuelve etiquetas bonitas tipo JULIO 2026 desde '2026-07'."""
+    meses = {
+        1: "ENERO", 2: "FEBRERO", 3: "MARZO", 4: "ABRIL",
+        5: "MAYO", 6: "JUNIO", 7: "JULIO", 8: "AGOSTO",
+        9: "SEPTIEMBRE", 10: "OCTUBRE", 11: "NOVIEMBRE", 12: "DICIEMBRE",
+    }
+    try:
+        dt = pd.Period(period_str, freq="M").to_timestamp()
+        return f"{meses[int(dt.month)]} {int(dt.year)}"
+    except Exception:
+        return str(period_str)
+
+
 def render_dashboard_page(conn, inv_df_full, APP_TZ) -> None:
     _inject_dash_css()
 
@@ -416,11 +461,11 @@ def render_dashboard_page(conn, inv_df_full, APP_TZ) -> None:
         invst_df["Monto_Invertido"] = pd.to_numeric(invst_df["Monto_Invertido"], errors="coerce").fillna(0.0)
 
     if not cab_df.empty:
-        cab_df["_Fecha_dt"] = pd.to_datetime(cab_df["Fecha"], errors="coerce", dayfirst=True)
+        cab_df["_Fecha_dt"] = _parse_fecha_series(cab_df)
 
     now          = datetime.now(APP_TZ)
     this_month   = now.strftime("%Y-%m")
-    this_month_l = now.strftime("%B %Y")
+    this_month_l = _month_label_es(this_month)
 
     # ── Global KPIs ──────────────────────────────────────────────────────────
     total_cobrado = float(cab_df["Total_Cobrado"].sum())  if not cab_df.empty else 0.0
@@ -565,23 +610,19 @@ def render_dashboard_page(conn, inv_df_full, APP_TZ) -> None:
     if not cab_df.empty and "_Fecha_dt" in cab_df.columns:
         st.markdown('<div class="dash-section">Ventas Mensuales</div>', unsafe_allow_html=True)
 
-        cab_df["_Month"] = cab_df["_Fecha_dt"].dt.to_period("M").astype(str)
+        cab_monthly = cab_df[cab_df["_Fecha_dt"].notna()].copy()
+        cab_monthly["_Month"] = cab_monthly["_Fecha_dt"].dt.to_period("M").astype(str)
         monthly = (
-            cab_df.groupby("_Month", as_index=False)
+            cab_monthly.groupby("_Month", as_index=False)
             .agg(Total=("Total_Cobrado", "sum"), N=("Venta_ID", "count"))
             .sort_values("_Month")
         )
 
-        month_es = {
-            "2026-01": "Enero 2026",   "2026-02": "Febrero 2026",
-            "2026-03": "Marzo 2026",   "2026-04": "Abril 2026",
-            "2026-05": "Mayo 2026",    "2026-06": "Junio 2026",
-        }
         max_t = float(monthly["Total"].max()) if not monthly.empty else 1.0
         bars  = ""
         for _, row in monthly.iterrows():
             pct   = (float(row["Total"]) / max_t * 100) if max_t > 0 else 0
-            label = month_es.get(str(row["_Month"]), str(row["_Month"]))
+            label = _month_label_es(str(row["_Month"]))
             bars += f"""
             <div class="dash-bar-row">
               <div class="dash-bar-header">
