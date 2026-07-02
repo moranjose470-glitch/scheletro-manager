@@ -17,15 +17,13 @@ def _inject_finanzas_css() -> None:
     st.markdown(
         """
         <style>
-          /* Fondos transparentes para que hereden el color de la pestaña */
           .fin-card, .fin-card-low {
             background: transparent;
             border-radius: 16px;
             padding: 20px;
             margin-bottom: 16px;
-            border: 1px solid rgba(255, 255, 255, 0.12);  /* Borde sutil */
+            border: 1px solid rgba(255, 255, 255, 0.12);
           }
-          /* Texto blanco normal, sin tintes */
           .fin-label {
             font-size: 0.65rem;
             font-weight: 700;
@@ -41,9 +39,10 @@ def _inject_finanzas_css() -> None:
             line-height: 1.1;
             margin-bottom: 16px;
           }
+          /* CAMBIO 1: de repeat(3) a repeat(2) para acomodar 4 métricas en 2x2 */
           .fin-mini-grid {
             display: grid;
-            grid-template-columns: repeat(3, 1fr);
+            grid-template-columns: repeat(2, 1fr);
             gap: 8px;
           }
           .fin-mini-label {
@@ -60,7 +59,6 @@ def _inject_finanzas_css() -> None:
             font-weight: 700;
             color: #ffffff;
           }
-          /* Ya no usamos verde; dejamos blanco para consistencia */
           .fin-mini-value.green { color: #ffffff; }
 
           .fin-eq-header {
@@ -72,7 +70,7 @@ def _inject_finanzas_css() -> None:
           .fin-eq-pct {
             font-size: 0.8rem;
             font-weight: 800;
-            color: #a0a0a0;   /* Acento neutro */
+            color: #a0a0a0;
           }
           .fin-bar-track {
             height: 10px;
@@ -84,7 +82,7 @@ def _inject_finanzas_css() -> None:
           }
           .fin-bar-fill {
             height: 100%;
-            background: #a0a0a0;   /* Relleno gris claro */
+            background: #a0a0a0;
             border-radius: 999px;
           }
           .fin-eq-footer {
@@ -95,6 +93,16 @@ def _inject_finanzas_css() -> None:
             color: #ffffff;
           }
           .fin-eq-footer span.muted { color: #cccccc; }
+
+          /* CAMBIO 2: estilo para mensaje contextual del equilibrio */
+          .fin-eq-context {
+            margin-top: 12px;
+            padding: 8px 12px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: rgba(255, 255, 255, 0.05);
+          }
 
           .fin-section-title {
             font-size: 1.08rem;
@@ -252,8 +260,8 @@ def _inject_finanzas_css() -> None:
             line-height: 1.1;
             color: #ffffff;
           }
-          .fin-kpi-value.red { color: #ff6b6b; }    /* Podés cambiarlo si preferís otro tono de advertencia */
-          .fin-kpi-value.green { color: #ffffff; }  /* Ya no usamos verde */
+          .fin-kpi-value.red { color: #ff6b6b; }
+          .fin-kpi-value.green { color: #ffffff; }
           .fin-kpi-sub {
             font-size: 0.62rem;
             color: #cccccc;
@@ -281,14 +289,6 @@ def _calc_recuperacion_prendas(
     neto_recibido: float,
     unidades_vendidas: int | float,
 ) -> tuple[float, float, int | None]:
-    """
-    Calcula cuánta inversión falta por recuperar y cuántas prendas adicionales
-    habría que vender usando el neto promedio real por unidad vendida.
-
-    Se usa NETO porque el progreso actual de recuperación compara Neto vs Inversión.
-    Si el producto todavía no tiene una base de venta neta válida, devuelve None
-    para evitar inventar una cantidad.
-    """
     inversion = float(inversion or 0.0)
     neto_recibido = float(neto_recibido or 0.0)
     unidades_vendidas = float(unidades_vendidas or 0.0)
@@ -438,13 +438,17 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
         active_drop = sel.replace("Drop ", "").strip()
         lines_f = lines_f[lines_f["Drop"].astype(str).str.strip() == active_drop].copy()
 
-    total_cobrado = float(pd.to_numeric(lines_f["_Cobrado_Asignado"], errors="coerce").fillna(0.0).sum())
-    neto_recibido = float(pd.to_numeric(lines_f["_Monto_Asignado"], errors="coerce").fillna(0.0).sum())
-    unidades = int(pd.to_numeric(lines_f["Cantidad"], errors="coerce").fillna(0).sum())
-    ganancia_neta = float(pd.to_numeric(lines_f["_Ganancia_Neta_Linea"], errors="coerce").fillna(0.0).sum())
+    total_cobrado  = float(pd.to_numeric(lines_f["_Cobrado_Asignado"],    errors="coerce").fillna(0.0).sum())
+    neto_recibido  = float(pd.to_numeric(lines_f["_Monto_Asignado"],      errors="coerce").fillna(0.0).sum())
+    unidades       = int(pd.to_numeric(lines_f["Cantidad"],               errors="coerce").fillna(0).sum())
+    ganancia_neta  = float(pd.to_numeric(lines_f["_Ganancia_Neta_Linea"], errors="coerce").fillna(0.0).sum())
     total_logistica = float(pd.to_numeric(lines_f["_Logistica_Asignada"], errors="coerce").fillna(0.0).sum())
 
     pct_logistica = (total_logistica / total_cobrado * 100) if total_cobrado > 0 else 0.0
+
+    # CAMBIO 1: Ticket promedio — ventas únicas dentro del scope filtrado
+    n_ventas_unicas  = lines_f["Venta_ID"].nunique() if not lines_f.empty else 0
+    ticket_promedio  = total_cobrado / n_ventas_unicas if n_ventas_unicas > 0 else 0.0
 
     precio_bruto_total = float(
         (
@@ -460,6 +464,7 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
     )
     pct_descuento = (descuento_total / precio_bruto_total * 100) if precio_bruto_total > 0 else 0.0
 
+    # CAMBIO 1: Card principal ahora muestra 4 métricas en grid 2x2
     st.markdown(
         f"""
         <div class="fin-card">
@@ -477,6 +482,10 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
             <div>
               <span class="fin-mini-label">Ganancia</span>
               <span class="fin-mini-value green">{money(ganancia_neta)}</span>
+            </div>
+            <div>
+              <span class="fin-mini-label">Ticket Promedio</span>
+              <span class="fin-mini-value">{money(ticket_promedio)}</span>
             </div>
           </div>
         </div>
@@ -517,6 +526,25 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
             unidades,
         )
         prendas_global_text = "—" if prendas_global is None else f"{prendas_global:,}"
+
+        # CAMBIO 2: mensaje contextual según el porcentaje alcanzado
+        if pct_eq >= 100:
+            ctx_icon  = "🟢"
+            ctx_msg   = "¡Inversión recuperada! Cada venta ahora es ganancia pura."
+            ctx_color = "#3fff8b"
+        elif pct_eq >= 70:
+            ctx_icon  = "🟡"
+            ctx_msg   = f"Muy cerca — faltan {prendas_global_text} prendas al ritmo actual."
+            ctx_color = "#ffd166"
+        elif pct_eq >= 40:
+            ctx_icon  = "🟠"
+            ctx_msg   = f"En camino — recuperaste el {pct_eq:.0f}%. Faltan {prendas_global_text} prendas."
+            ctx_color = "#ffa040"
+        else:
+            ctx_icon  = "🔴"
+            ctx_msg   = f"Zona de recuperación — faltan {prendas_global_text} prendas al ritmo actual."
+            ctx_color = "#ff6b6b"
+
         st.markdown(
             f"""
             <div class="fin-card-low">
@@ -534,6 +562,9 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
               <div class="fin-eq-footer">
                 <span>Faltante: {money(faltante_global)}</span>
                 <span class="muted">Prendas faltantes: {prendas_global_text}</span>
+              </div>
+              <div class="fin-eq-context" style="color:{ctx_color};">
+                {ctx_icon} {_esc(ctx_msg)}
               </div>
             </div>
             """,
@@ -554,8 +585,8 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
 
         star_items: list[str] = []
         for i, (_, r) in enumerate(star.iterrows(), start=1):
-            num = f"{i:02d}"
-            name = _esc(r["Producto"])
+            num   = f"{i:02d}"
+            name  = _esc(r["Producto"])
             price = money(float(r["_Ganancia_Neta_Linea"]))
             star_items.append(
                 f'<div class="fin-star-item">'
@@ -582,8 +613,8 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
         inv_prod = pd.DataFrame(columns=["Tipo", "Referencia", "Monto_Invertido"])
         if not invst_df.empty:
             inv_prod = invst_df.copy()
-            inv_prod["Tipo"] = inv_prod["Tipo"].astype(str).str.upper().str.strip()
-            inv_prod["Referencia"] = inv_prod["Referencia"].astype(str).str.strip()
+            inv_prod["Tipo"]           = inv_prod["Tipo"].astype(str).str.upper().str.strip()
+            inv_prod["Referencia"]     = inv_prod["Referencia"].astype(str).str.strip()
             inv_prod["Monto_Invertido"] = pd.to_numeric(inv_prod["Monto_Invertido"], errors="coerce").fillna(0.0)
             inv_prod = inv_prod[inv_prod["Tipo"] == "PRODUCTO"].copy()
             if active_drop:
@@ -591,11 +622,11 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
                 inv_prod = inv_prod[inv_prod["Referencia"].isin(prods_in_drop)].copy()
 
         g = lines_f.groupby("Producto", as_index=False).agg(
-            Unidades=("Cantidad", "sum"),
-            Ingreso=("Subtotal_Linea", "sum"),
-            Neto=("_Monto_Asignado", "sum"),
-            COGS=("COGS_Linea", "sum"),
-            Ganancia=("_Ganancia_Neta_Linea", "sum"),
+            Unidades=("Cantidad",            "sum"),
+            Ingreso =("Subtotal_Linea",      "sum"),
+            Neto    =("_Monto_Asignado",     "sum"),
+            COGS    =("COGS_Linea",          "sum"),
+            Ganancia=("_Ganancia_Neta_Linea","sum"),
         )
 
         if not inv_prod.empty:
@@ -609,8 +640,8 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
             g[col] = pd.to_numeric(g[col], errors="coerce").fillna(0.0)
 
         g["Margen_Pct"] = g.apply(lambda r: (r["Ganancia"] / r["Ingreso"] * 100) if r["Ingreso"] > 0 else 0.0, axis=1)
-        g["ROI_Pct"] = g.apply(lambda r: (r["Ganancia"] / r["COGS"] * 100) if r["COGS"] > 0 else 0.0, axis=1)
-        g["Pct_Rec"] = g.apply(
+        g["ROI_Pct"]    = g.apply(lambda r: (r["Ganancia"] / r["COGS"] * 100) if r["COGS"] > 0 else 0.0, axis=1)
+        g["Pct_Rec"]    = g.apply(
             lambda r: (r["Neto"] / r["Monto_Invertido"] * 100) if r["Monto_Invertido"] > 0 else -1.0,
             axis=1,
         )
@@ -624,26 +655,39 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
             )
 
         for _, r in g.iterrows():
-            prod = str(r["Producto"])
-            unids = int(r["Unidades"])
-            ingreso = float(r["Ingreso"])
-            neto = float(r["Neto"])
-            cogs = float(r["COGS"])
+            prod     = str(r["Producto"])
+            unids    = int(r["Unidades"])
+            ingreso  = float(r["Ingreso"])
+            neto     = float(r["Neto"])
+            cogs     = float(r["COGS"])
             ganancia = float(r["Ganancia"])
-            margen = float(r["Margen_Pct"])
-            roi = float(r["ROI_Pct"])
-            invv = float(r["Monto_Invertido"])
-            pct_rec = max(0.0, min(100.0, (neto / invv * 100) if invv > 0 else 0.0))
+            margen   = float(r["Margen_Pct"])
+            roi      = float(r["ROI_Pct"])
+            invv     = float(r["Monto_Invertido"])
+            pct_rec  = max(0.0, min(100.0, (neto / invv * 100) if invv > 0 else 0.0))
+
             prog_text = f"{money(neto)} / {money(invv)}" if invv > 0 else "Sin inversión asignada"
-            faltante_rec, neto_prom_prenda, prendas_faltantes = _calc_recuperacion_prendas(
-                invv,
-                neto,
-                unids,
-            )
-            faltante_text = money(faltante_rec) if invv > 0 else "—"
+            faltante_rec, neto_prom_prenda, prendas_faltantes = _calc_recuperacion_prendas(invv, neto, unids)
+            faltante_text         = money(faltante_rec) if invv > 0 else "—"
             prendas_faltantes_text = "—" if prendas_faltantes is None else f"{prendas_faltantes:,}"
 
-            with st.expander(f"{prod} · {unids} unidades vendidas", expanded=False):
+            # CAMBIO 3: indicador de color en el título del expander
+            if invv <= 0:
+                status_icon  = "⚪"
+                status_label = "sin inversión asignada"
+            elif pct_rec >= 100:
+                status_icon  = "🟢"
+                status_label = "100% recuperado"
+            elif pct_rec >= 50:
+                status_icon  = "🟡"
+                status_label = f"{pct_rec:.0f}% recuperado"
+            else:
+                status_icon  = "🔴"
+                status_label = f"{pct_rec:.0f}% recuperado"
+
+            expander_title = f"{status_icon} {prod} · {unids} uds · {status_label}"
+
+            with st.expander(expander_title, expanded=False):
                 st.markdown(
                     f"""
                     <div class="fin-prog-label">
@@ -701,7 +745,7 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
 
         if active_drop and not lines_f.empty:
             vids_scope = set(lines_f["Venta_ID"].astype(str).unique())
-            cab_scope = cab_f[cab_f["Venta_ID"].astype(str).isin(vids_scope)].copy()
+            cab_scope  = cab_f[cab_f["Venta_ID"].astype(str).isin(vids_scope)].copy()
         else:
             cab_scope = cab_f.copy()
 
@@ -714,8 +758,8 @@ def render_finanzas_page(conn, inv_df_full, APP_TZ) -> None:
 
         pay_rows: list[str] = []
         for _, pm in pay.iterrows():
-            metodo = _esc(pm["Metodo_Pago"])
-            monto = float(pm["Total_Cobrado"])
+            metodo  = _esc(pm["Metodo_Pago"])
+            monto   = float(pm["Total_Cobrado"])
             pct_bar = (monto / pay_total * 100) if pay_total > 0 else 0.0
             pay_rows.append(
                 f'<div class="fin-pay-row">'
