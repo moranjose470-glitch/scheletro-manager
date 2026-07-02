@@ -82,7 +82,7 @@ page = st.session_state.scheletro_page
 
 
 if page == "Dashboard":
-    render_dashboard_page()
+    render_dashboard_page(conn, inv_df_full, APP_TZ)  # FIX: pasar argumentos requeridos
 
 elif page == "Inventario":
     render_inventario_page(conn, inv_df_full, fmt_bodega, bodega1_nombre, bodega2_nombre)
