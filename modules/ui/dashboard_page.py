@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import html
+import re
 from datetime import datetime
 
 import pandas as pd
@@ -254,6 +255,82 @@ def _inject_dash_css() -> None:
         font-weight: 800;
         color: #ff6b6b;
       }
+      /* ── Últimas órdenes ── */
+      .dash-order-list {
+        background: rgba(20,20,20,0.72);
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 18px;
+        overflow: hidden;
+        margin-bottom: 4px;
+      }
+      .dash-order-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 13px 18px;
+        border-bottom: 1px solid rgba(255,255,255,0.06);
+        gap: 10px;
+      }
+      .dash-order-item:last-child { border-bottom: none; }
+      .dash-order-left { flex: 1; min-width: 0; }
+      .dash-order-topline {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 3px;
+      }
+      .dash-order-id {
+        font-size: 0.72rem;
+        font-weight: 800;
+        color: #ffffff;
+      }
+      .dash-order-badge {
+        font-size: 0.52rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        padding: 2px 8px;
+        border-radius: 999px;
+        white-space: nowrap;
+      }
+      .dash-order-client {
+        font-size: 0.82rem;
+        font-weight: 600;
+        color: #dddddd;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .dash-order-products {
+        font-size: 0.68rem;
+        color: #888;
+        margin-top: 3px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .dash-order-meta {
+        font-size: 0.6rem;
+        color: #555;
+        margin-top: 4px;
+      }
+      .dash-order-right {
+        flex-shrink: 0;
+        text-align: right;
+        display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+      }
+      .dash-order-total {
+        font-size: 0.92rem;
+        font-weight: 900;
+        color: #3fff8b;
+      }
+      .dash-order-net {
+        font-size: 0.58rem;
+        color: #555;
+        margin-top: 2px;
+      }
     </style>
     """, unsafe_allow_html=True)
 
@@ -263,6 +340,48 @@ def _money(x: float) -> str:
         return f"${float(x):,.2f}"
     except Exception:
         return "$0.00"
+
+
+_VENTA_ID_RE = re.compile(r"^V-(\d{4})-(\d+)$")
+
+
+def _order_sort_key(venta_id: str) -> tuple[int, int]:
+    """
+    Ordena por año y correlativo del Venta_ID (V-YYYY-NNNN), que refleja
+    el orden real de REGISTRO (no depende de que 'Fecha' esté bien tipeada).
+    Si el ID no matchea el patrón, cae al final.
+    """
+    m = _VENTA_ID_RE.match(str(venta_id).strip())
+    if not m:
+        return (0, 0)
+    return (int(m.group(1)), int(m.group(2)))
+
+
+def _order_products_summary(det_df: pd.DataFrame, venta_id: str, max_items: int = 3) -> str:
+    """Arma un resumen corto '2× Producto (Color/Talla), 1× Otro Producto +N más'."""
+    if det_df is None or det_df.empty or "Venta_ID" not in det_df.columns:
+        return "—"
+
+    lines = det_df[det_df["Venta_ID"] == venta_id]
+    if lines.empty:
+        return "—"
+
+    parts: list[str] = []
+    for _, r in lines.iterrows():
+        qty   = int(pd.to_numeric(r.get("Cantidad", 0), errors="coerce") or 0)
+        prod  = str(r.get("Producto", "")).strip() or "Producto"
+        color = str(r.get("Color", "")).strip()
+        talla = str(r.get("Talla", "")).strip()
+
+        detail = f"{qty}× {prod}"
+        extras = [x for x in [color, talla] if x and x.upper() not in ("STANDARD", "OS", "N/A", "")]
+        if extras:
+            detail += f" ({'/'.join(extras)})"
+        parts.append(detail)
+
+    if len(parts) > max_items:
+        return ", ".join(parts[:max_items]) + f" +{len(parts) - max_items} más"
+    return ", ".join(parts)
 
 
 def render_dashboard_page(conn, inv_df_full, APP_TZ) -> None:
@@ -374,6 +493,73 @@ def render_dashboard_page(conn, inv_df_full, APP_TZ) -> None:
           </div>
         </div>
         """, unsafe_allow_html=True)
+
+    # ── Últimas Órdenes ───────────────────────────────────────────────────────
+    if not cab_df.empty:
+        st.markdown('<div class="dash-section">🧾 Últimas Órdenes</div>', unsafe_allow_html=True)
+
+        N_SHOW = 10  # <- cambiá este número si querés mostrar más/menos
+
+        cab_sorted = cab_df.copy()
+        cab_sorted["_SortKey"] = cab_sorted["Venta_ID"].apply(_order_sort_key)
+        cab_sorted = cab_sorted.sort_values("_SortKey", ascending=False)
+        last_orders = cab_sorted.head(N_SHOW)
+
+        pay_colors = {
+            "efectivo": "#3fff8b",
+            "transferencia": "#60b4ff",
+            "tarjeta": "#c084fc",
+            "contra entrega": "#ffd166",
+        }
+        estado_colors = {
+            "completada": "#3fff8b",
+            "completado": "#3fff8b",
+            "pendiente": "#ffd166",
+            "pending": "#ffd166",
+            "cancelada": "#ff6b6b",
+            "cancelado": "#ff6b6b",
+        }
+
+        order_rows = ""
+        for _, o in last_orders.iterrows():
+            vid     = str(o.get("Venta_ID", ""))
+            fecha   = str(o.get("Fecha", "")).strip()
+            hora    = str(o.get("Hora", "")).strip()
+            cliente = str(o.get("Cliente", "")).strip() or "—"
+            metodo  = str(o.get("Metodo_Pago", "")).strip()
+            estado  = str(o.get("Estado", "")).strip() or "COMPLETADA"
+            total   = float(pd.to_numeric(o.get("Total_Cobrado", 0), errors="coerce") or 0)
+            neto    = float(pd.to_numeric(o.get("Monto_A_Recibir", 0), errors="coerce") or 0)
+
+            pay_color = pay_colors.get(metodo.lower(), "#a0a0a0")
+            est_color = estado_colors.get(estado.lower(), "#a0a0a0")
+
+            products_str = _order_products_summary(det_df, vid)
+            meta_str = " · ".join(x for x in [fecha, hora] if x)
+
+            order_rows += f"""
+            <div class="dash-order-item">
+              <div class="dash-order-left">
+                <div class="dash-order-topline">
+                  <span class="dash-order-id">{_esc(vid)}</span>
+                  <span class="dash-order-badge" style="background:{est_color}22;color:{est_color}">{_esc(estado)}</span>
+                </div>
+                <div class="dash-order-client">{_esc(cliente)}</div>
+                <div class="dash-order-products">{_esc(products_str)}</div>
+                <div class="dash-order-meta">{_esc(meta_str)} &nbsp;·&nbsp; <span style="color:{pay_color}">{_esc(metodo)}</span></div>
+              </div>
+              <div class="dash-order-right">
+                <span class="dash-order-total">{_money(total)}</span>
+                <span class="dash-order-net">Neto: {_money(neto)}</span>
+              </div>
+            </div>"""
+
+        st.markdown(f'<div class="dash-order-list">{order_rows}</div>', unsafe_allow_html=True)
+        st.markdown(
+            f'<div style="font-size:0.62rem;color:#555;margin-top:6px;margin-bottom:4px">'
+            f'Mostrando {len(last_orders)} de {len(cab_df)} órdenes registradas</div>',
+            unsafe_allow_html=True,
+        )
 
     # ── Monthly sales chart ───────────────────────────────────────────────────
     if not cab_df.empty and "_Fecha_dt" in cab_df.columns:
